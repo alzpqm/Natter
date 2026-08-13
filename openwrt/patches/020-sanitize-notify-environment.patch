@@ -1,0 +1,18 @@
+--- a/natter.py
++++ b/natter.py
+@@ -1862,9 +1862,14 @@ def natter_main(show_title = True):
+         inner_ip, inner_port = to_addr if method else natter_addr
+         outer_ip, outer_port = outer_addr
+         Logger.info("Calling script: %s" % notify_sh)
++        # mwan3 use injects a socket LD_PRELOAD wrapper.  Keep it in this
++        # process for WAN pinning, but do not pass it to local notification
++        # helpers such as ubus clients, which need their own local sockets.
++        notify_env = os.environ.copy()
++        notify_env.pop("LD_PRELOAD", None)
+         subprocess.call([
+             os.path.abspath(notify_sh), protocol, str(inner_ip), str(inner_port), str(outer_ip), str(outer_port)
+-        ], shell=False)
++        ], shell=False, env=notify_env)
+ 
+     # Display check results, TCP only
+    if not udp_mode and not no_port_test:

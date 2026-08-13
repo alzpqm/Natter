@@ -1,3 +1,7 @@
 /.vscode
 /micropython/build
 __pycache__
+/openwrt/dist/
+/openwrt/HANDOFF.md
+/openwrt/SSH_ACCESS.md
+.DS_Store

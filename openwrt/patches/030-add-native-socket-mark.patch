@@ -1,0 +1,19 @@
+--- a/natter.py
++++ b/natter.py
+@@ -1383,6 +1383,16 @@ class NatterRetryException(Exception):
+ 
+ 
+ def socket_set_opt(sock, reuse=False, bind_addr=None, interface=None, timeout=-1):
++    mark = os.environ.get("NATTER_SO_MARK")
++    if mark:
++        if not hasattr(socket, "SO_MARK"):
++            raise RuntimeError("Setting a socket mark is not supported on this platform.")
++        try:
++            mark_value = int(mark, 0)
++        except ValueError:
++            raise ValueError("Invalid NATTER_SO_MARK: %s" % mark)
++        sock.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, mark_value)
++
+     if reuse:
+         if hasattr(socket, "SO_REUSEADDR"):
+             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -1,0 +1,52 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+instance="${NATTER_INSTANCE:-unknown}"
+config_section="${NATTER_CONFIG_SECTION:-$instance}"
+interface="${NATTER_INTERFACE:-unknown}"
+protocol="$1"
+mapped_ip="$2"
+mapped_port="$3"
+public_ip="$4"
+public_port="$5"
+
+case "$instance" in
+	''|*[!A-Za-z0-9_.:-]*) instance=unknown ;;
+esac
+case "$config_section" in
+	''|*[!A-Za-z0-9_.:-]*) config_section=unknown ;;
+esac
+
+config_load natter
+config_get target_ip "$config_section" target_ip '-'
+config_get target_port "$config_section" target_port '-'
+config_get hook_script "$config_section" hook_script
+
+mkdir -p /var/run/natter
+state_tmp="$(mktemp "/var/run/natter/.${instance}.XXXXXX")" || exit 1
+{
+	printf 'instance=%s\n' "$instance"
+	printf 'config=%s\n' "$config_section"
+	printf 'interface=%s\n' "$interface"
+	printf 'protocol=%s\n' "$protocol"
+	printf 'status=ok\n'
+	printf 'mapped_inside=%s:%s\n' "$mapped_ip" "$mapped_port"
+	printf 'public=%s:%s\n' "$public_ip" "$public_port"
+	printf 'target=%s:%s\n' "$target_ip" "$target_port"
+	printf 'updated_at=%s\n' "$(date +%s)"
+} > "$state_tmp"
+mv -f "$state_tmp" "/var/run/natter/${instance}.state"
+
+logger -t "natter[$instance]" -- \
+	"$protocol public $public_ip:$public_port -> $target_ip:$target_port via $interface"
+
+# mwan3 use injects a socket LD_PRELOAD wrapper.  ubus needs a local socket;
+# do not let the WAN wrapper reinterpret that socket as an Internet socket.
+env -u LD_PRELOAD ubus send natter.mapping \
+	"{\"instance\":\"$instance\",\"config\":\"$config_section\",\"interface\":\"$interface\",\"protocol\":\"$protocol\",\"public_ip\":\"$public_ip\",\"public_port\":$public_port,\"target_ip\":\"$target_ip\",\"target_port\":$target_port}" \
+	2>/dev/null || true
+
+if [ -n "$hook_script" ] && [ -x "$hook_script" ]; then
+	"$hook_script" "$protocol" "$mapped_ip" "$mapped_port" "$public_ip" "$public_port"
+fi

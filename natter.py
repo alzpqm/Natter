@@ -1520,7 +1520,7 @@ def validate_ip(s, err=True):
         return True
     except (OSError, socket.error):
         if err:
-            raise ValueError("Invalid IP address: %s" % s)
+            raise ValueError("Invalid IP address: %s" % s) from None
         return False
 
 

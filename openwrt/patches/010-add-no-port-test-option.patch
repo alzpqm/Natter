@@ -1,0 +1,28 @@
+--- a/natter.py
++++ b/natter.py
+@@ -1596,6 +1596,9 @@ def natter_main(show_title = True):
+     group.add_argument(
+         "-u", action="store_true", help="UDP mode"
+     )
++    group.add_argument(
++        "--no-port-test", action="store_true", help="disable external TCP port checks"
++    )
+     group.add_argument(
+         "-U", action="store_true", help="enable UPnP/IGD discovery"
+     )
+@@ -1646,5 +1649,6 @@ def natter_main(show_title = True):
+     verbose = args.v
+     udp_mode = args.u
++    no_port_test = args.no_port_test
+     upnp_enabled = args.U
+     interval = args.k
+     stun_list = args.s
+@@ -1863,7 +1867,7 @@ def natter_main(show_title = True):
+         ))
+ 
+     # Display check results, TCP only
+-    if not udp_mode:
++    if not udp_mode and not no_port_test:
+         ret1 = port_test.test_lan(to_addr, info=True)
+         ret2 = port_test.test_lan(natter_addr, info=True)
+         ret3 = port_test.test_lan(outer_addr, source_ip=natter_addr[0], interface=bind_interface, info=True)

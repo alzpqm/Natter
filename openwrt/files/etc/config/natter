@@ -1,0 +1,7 @@
+config globals 'globals'
+	option enabled '0'
+	option mwan3_isolation '1'
+	option dns_server '119.29.29.29'
+
+# Add mapping sections through LuCI (Services -> Natter) or follow README.md.
+# bind_port is an unused router-side port, not the LAN service's listening port.

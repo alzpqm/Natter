@@ -1,0 +1,33 @@
+#!/bin/sh
+
+show_status() {
+	if /etc/init.d/natter running; then
+		echo "natter service: running"
+	else
+		echo "natter service: stopped"
+	fi
+
+	found=0
+	for state in /var/run/natter/*.state; do
+		[ -f "$state" ] || continue
+		found=1
+		echo
+		cat "$state"
+	done
+	[ "$found" -eq 1 ] || echo "no active public mappings reported"
+}
+
+case "${1:-status}" in
+	status|mappings) show_status ;;
+	firewall)
+		for chain in dstnat forward input; do
+			echo "[$chain]"
+			cat "/usr/share/natter/runtime/$chain.nft"
+		done
+	;;
+	restart) /etc/init.d/natter restart ;;
+	probe-all) exec /usr/libexec/natter-probe ;;
+	check-config) exec /usr/libexec/natter-probe config-check ;;
+	status-json) exec /usr/libexec/natter-probe runtime-status ;;
+	*) echo "usage: natterctl {status|status-json|mappings|firewall|probe-all|check-config|restart}" >&2; exit 2 ;;
+esac

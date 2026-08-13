@@ -1,0 +1,354 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+PROG="/usr/share/natter/natter.py"
+PYTHON="/usr/bin/python3"
+FIREWALL_HELPER="/usr/libexec/natter-firewall"
+NOTIFY_HELPER="/usr/libexec/natter-notify"
+PROBE_HELPER="/usr/libexec/natter-probe"
+
+log_msg() {
+	logger -t natter -- "$*"
+}
+
+write_error_state() {
+	local section="$1" process_name="$2" interface="$3" protocol="$4"
+	local target_ip="$5" target_port="$6" message="$7" state_tmp
+
+	message="$(printf '%s' "$message" | tr '\r\n' '  ')"
+	mkdir -p /var/run/natter
+	state_tmp="$(mktemp "/var/run/natter/.${process_name}.XXXXXX")" || return 1
+	{
+		printf 'instance=%s\n' "$process_name"
+		printf 'config=%s\n' "$section"
+		printf 'interface=%s\n' "$interface"
+		printf 'protocol=%s\n' "$protocol"
+		printf 'status=error\n'
+		printf 'error=%s\n' "$message"
+		printf 'mapped_inside=-\n'
+		printf 'public=-\n'
+		printf 'target=%s:%s\n' "$target_ip" "$target_port"
+		printf 'updated_at=%s\n' "$(date +%s)"
+	} > "$state_tmp"
+	mv -f "$state_tmp" "/var/run/natter/${process_name}.state"
+}
+
+valid_uint() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
+}
+
+valid_ipv4() {
+	awk -F. '
+		NF != 4 { exit 1 }
+		{
+			for (i = 1; i <= 4; i++)
+				if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255)
+					exit 1
+		}
+	' <<-EOF >/dev/null 2>&1
+	$1
+	EOF
+}
+
+valid_mark() {
+	local digits
+
+	case "$1" in
+		0x*) digits="${1#0x}" ;;
+		0X*) digits="${1#0X}" ;;
+		*)
+			case "$1" in
+				''|*[!0-9]*) return 1 ;;
+			esac
+			[ "$1" -gt 0 ] 2>/dev/null
+			return $?
+		;;
+	esac
+
+	case "$digits" in
+		''|*[!0-9A-Fa-f]*) return 1 ;;
+	esac
+	[ "$(($1))" -gt 0 ] 2>/dev/null
+}
+
+resolve_endpoint() {
+	local endpoint="$1"
+	local default_port="$2"
+	local host port address
+
+	case "$endpoint" in
+		*:*)
+			host="${endpoint%:*}"
+			port="${endpoint##*:}"
+		;;
+		*)
+			host="$endpoint"
+			port="$default_port"
+		;;
+	esac
+
+	valid_uint "$port" || return 1
+
+	if valid_ipv4 "$host"; then
+		printf '%s:%s\n' "$host" "$port"
+		return 0
+	fi
+
+	for address in $(resolve_host "$host"); do
+		valid_ipv4 "$address" && printf '%s:%s\n' "$address" "$port"
+	done
+}
+
+resolve_host() {
+	local host="$1"
+	local output
+
+	if [ "$RESOLVE_ISOLATION" -eq 1 ]; then
+		output="$("$PROBE_HELPER" resolve "$RESOLVE_DEVICE" "$host" \
+			"$RESOLVE_DNS" "$RESOLVE_MARK" 2>/dev/null)"
+		printf '%s\n' "$output"
+	else
+		output="$(nslookup "$host" "$RESOLVE_DNS" 2>/dev/null)"
+		printf '%s\n' "$output" | awk '
+			/^Name:[[:space:]]/ { answer = 1; next }
+			answer && /^Address([[:space:]][0-9]+)?:[[:space:]]/ { print $NF }
+		'
+	fi
+}
+
+collect_stun_server() {
+	local endpoint="$1"
+	local resolved
+
+	for resolved in $(resolve_endpoint "$endpoint" 3478); do
+		RESOLVED_STUN="$RESOLVED_STUN $resolved"
+	done
+}
+
+start_protocol_instance() {
+	local section="$1" protocol="$2" process_name="$3"
+	local enabled interface bind_port target_ip target_port interval
+	local keepalive_server verbose hook_script device isolation mark
+	local default_keepalive resolved_keepalive endpoint dns_server configured_protocol
+	local port_error mark_arg stun_option keepalive_option
+
+	config_get_bool enabled "$section" enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+
+	config_get interface "$section" interface
+	config_get configured_protocol "$section" protocol tcp
+	config_get bind_port "$section" bind_port
+	config_get target_ip "$section" target_ip
+	config_get target_port "$section" target_port
+	config_get interval "$section" interval 15
+	config_get_bool verbose "$section" verbose 0
+	config_get hook_script "$section" hook_script
+	config_get_bool isolation globals mwan3_isolation 1
+	config_get dns_server globals dns_server 119.29.29.29
+
+	case "$protocol" in
+		tcp|udp) ;;
+		*) log_msg "$section: protocol must be tcp or udp"; return 1 ;;
+	esac
+	valid_uint "$bind_port" || {
+		log_msg "$section: bind_port must be a fixed port from 1 to 65535"
+		return 1
+	}
+	valid_uint "$target_port" || {
+		log_msg "$section: target_port must be from 1 to 65535"
+		return 1
+	}
+	valid_ipv4 "$target_ip" || {
+		log_msg "$section: target_ip must be an IPv4 address"
+		return 1
+	}
+	valid_uint "$interval" || {
+		log_msg "$section: interval must be a positive integer"
+		return 1
+	}
+
+	network_get_device device "$interface"
+	[ -n "$device" ] || {
+		log_msg "$section: OpenWrt interface '$interface' has no active L3 device"
+		return 1
+	}
+	valid_ipv4 "$dns_server" || {
+		log_msg "$section: globals.dns_server must be an IPv4 address"
+		return 1
+	}
+	if [ "$isolation" -eq 1 ] && \
+		[ "$(uci -q get "mwan3.$interface")" != interface ]; then
+		log_msg "$section: '$interface' must also be a named mwan3 interface section"
+		return 1
+	fi
+	if [ "$isolation" -eq 1 ]; then
+		mark="$(uci -q get mwan3.globals.mmx_mask)"
+		[ -n "$mark" ] || mark='0x3F00'
+		valid_mark "$mark" || {
+			log_msg "$section: mwan3.globals.mmx_mask is invalid"
+			return 1
+		}
+	fi
+	mark_arg="${mark:--}"
+	if ! port_error="$("$PROBE_HELPER" check-port "$device" "$protocol" \
+		"$bind_port" "$mark_arg" 2>&1)"; then
+		[ -n "$port_error" ] || port_error="$protocol port $bind_port is unavailable"
+		log_msg "$section/$protocol: $port_error"
+		write_error_state "$section" "$process_name" "$interface" "$protocol" \
+			"$target_ip" "$target_port" "$port_error"
+		return 0
+	fi
+
+	RESOLVE_ISOLATION="$isolation"
+	RESOLVE_DNS="$dns_server"
+	RESOLVE_DEVICE="$device"
+	RESOLVE_MARK="$mark"
+
+	RESOLVED_STUN=""
+	if [ "$configured_protocol" = both ]; then
+		stun_option="${protocol}_stun_server"
+		keepalive_option="${protocol}_keepalive_server"
+	else
+		stun_option="stun_server"
+		keepalive_option="keepalive_server"
+	fi
+	config_list_foreach "$section" "$stun_option" collect_stun_server
+	if [ -z "$RESOLVED_STUN" ]; then
+		if [ "$protocol" = udp ]; then
+			collect_stun_server 'stun.miwifi.com:3478'
+			collect_stun_server 'stun.chat.bilibili.com:3478'
+			collect_stun_server 'stun.hitv.com:3478'
+			collect_stun_server 'stun.douyucdn.cn:18000'
+		else
+			collect_stun_server 'turn.cloud-rtc.com:80'
+		fi
+	fi
+	[ -n "$RESOLVED_STUN" ] || {
+		port_error="none of the configured mainland-China STUN names resolved"
+		log_msg "$section/$protocol: $port_error"
+		write_error_state "$section" "$process_name" "$interface" "$protocol" \
+			"$target_ip" "$target_port" "$port_error"
+		return 0
+	}
+
+	config_get keepalive_server "$section" "$keepalive_option"
+	if [ -z "$keepalive_server" ]; then
+		[ "$protocol" = udp ] && default_keepalive='119.29.29.29:53' || \
+			default_keepalive='www.baidu.com:80'
+		keepalive_server="$default_keepalive"
+	fi
+	set -- $(resolve_endpoint "$keepalive_server" "$( [ "$protocol" = udp ] && echo 53 || echo 80 )")
+	resolved_keepalive="$1"
+	[ -n "$resolved_keepalive" ] || {
+		port_error="keepalive_server '$keepalive_server' did not resolve"
+		log_msg "$section/$protocol: $port_error"
+		write_error_state "$section" "$process_name" "$interface" "$protocol" \
+			"$target_ip" "$target_port" "$port_error"
+		return 0
+	}
+
+	# A respawned instance must not inherit a previous mapping or error result.
+	# The new process will publish a fresh state once STUN succeeds.
+	rm -f "/var/run/natter/${process_name}.state"
+	procd_open_instance "$process_name"
+	procd_set_param command "$PYTHON" "$PROG"
+
+	procd_append_param command --no-port-test
+	procd_append_param command -m none
+	procd_append_param command -i "$device"
+	procd_append_param command -b "$bind_port"
+	procd_append_param command -k "$interval"
+	procd_append_param command -h "$resolved_keepalive"
+	procd_append_param command -e "$NOTIFY_HELPER"
+	[ "$protocol" = udp ] && procd_append_param command -u
+	[ "$verbose" -eq 1 ] && procd_append_param command -v
+	for endpoint in $RESOLVED_STUN; do
+		procd_append_param command -s "$endpoint"
+	done
+
+	if [ "$isolation" -eq 1 ]; then
+		procd_set_param env NATTER_OPENWRT_LOG=1 NATTER_INSTANCE="$process_name" NATTER_CONFIG_SECTION="$section" \
+			NATTER_INTERFACE="$interface" \
+			NATTER_SO_MARK="$mark"
+	else
+		procd_set_param env NATTER_OPENWRT_LOG=1 NATTER_INSTANCE="$process_name" NATTER_CONFIG_SECTION="$section" \
+			NATTER_INTERFACE="$interface"
+	fi
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+start_instance() {
+	local section="$1" enabled protocol failed=0
+
+	config_get_bool enabled "$section" enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+	config_get protocol "$section" protocol tcp
+
+	case "$protocol" in
+		tcp|udp)
+			start_protocol_instance "$section" "$protocol" "$section"
+		;;
+		both)
+			start_protocol_instance "$section" tcp "${section}_tcp" || failed=1
+			start_protocol_instance "$section" udp "${section}_udp" || failed=1
+			return "$failed"
+		;;
+		*)
+			log_msg "$section: protocol must be tcp, udp or both"
+			return 1
+		;;
+	esac
+}
+
+start_service() {
+	local enabled
+
+	. /lib/functions/network.sh
+	config_load natter
+	config_get_bool enabled globals enabled 0
+	[ "$enabled" -eq 1 ] || {
+		"$FIREWALL_HELPER" clear
+		return 0
+	}
+
+	"$FIREWALL_HELPER" sync || return 1
+	config_foreach start_instance instance
+}
+
+stop_service() {
+	"$FIREWALL_HELPER" clear
+	rm -f /var/run/natter/*.state 2>/dev/null
+}
+
+reload_service() {
+	stop
+	start
+}
+
+add_interface_trigger() {
+	local section="$1"
+	local enabled interface
+
+	config_get_bool enabled "$section" enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+	config_get interface "$section" interface
+	[ -n "$interface" ] && \
+		procd_add_interface_trigger "interface.*" "$interface" /etc/init.d/natter reload
+}
+
+service_triggers() {
+	config_load natter
+	procd_open_trigger
+	config_foreach add_interface_trigger instance
+	procd_close_trigger
+	procd_add_reload_trigger natter
+}

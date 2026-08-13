@@ -1,0 +1,611 @@
+#!/usr/bin/python3
+
+"""Probe the public IPv4 address of every distinct mwan3 WAN."""
+
+import json
+import errno
+import glob
+import os
+import re
+import socket
+import struct
+import subprocess
+import sys
+
+
+DEFAULT_DNS = "119.29.29.29"
+DEFAULT_MARK = "0x3F00"
+STUN_SERVERS = (
+    ("stun.miwifi.com", 3478),
+    ("stun.chat.bilibili.com", 3478),
+    ("stun.hitv.com", 3478),
+    ("stun.douyucdn.cn", 18000),
+)
+IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+def run(command, timeout=5):
+    return subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env={key: value for key, value in os.environ.items() if key != "LD_PRELOAD"},
+    )
+
+
+def uci_get(key, default):
+    try:
+        result = run(["uci", "-q", "get", key], timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        return default
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else default
+
+
+def valid_ipv4(value):
+    if not IPV4_RE.match(value or ""):
+        return False
+    try:
+        return all(0 <= int(part) <= 255 for part in value.split("."))
+    except ValueError:
+        return False
+
+
+def set_wan_socket_options(sock, device, mark, reuse=False):
+    if mark:
+        sock.setsockopt(
+            socket.SOL_SOCKET,
+            getattr(socket, "SO_MARK", 36),
+            mark,
+        )
+    if reuse:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    sock.setsockopt(
+        socket.SOL_SOCKET,
+        getattr(socket, "SO_BINDTODEVICE", 25),
+        device.encode("ascii") + b"\0",
+    )
+
+
+def encode_dns_name(hostname):
+    labels = hostname.rstrip(".").split(".")
+    if not labels or any(not label or len(label.encode("ascii")) > 63 for label in labels):
+        raise ValueError("invalid DNS name")
+    return b"".join(bytes((len(label.encode("ascii")),)) + label.encode("ascii")
+                    for label in labels) + b"\0"
+
+
+def skip_dns_name(packet, offset):
+    while offset < len(packet):
+        length = packet[offset]
+        if length & 0xC0 == 0xC0:
+            if offset + 2 > len(packet):
+                raise ValueError("truncated DNS pointer")
+            return offset + 2
+        offset += 1
+        if length == 0:
+            return offset
+        offset += length
+    raise ValueError("truncated DNS name")
+
+
+def parse_dns_a_records(packet, transaction_id):
+    if len(packet) < 12:
+        raise ValueError("short DNS response")
+    response_id, flags, questions, answers, _, _ = struct.unpack("!HHHHHH", packet[:12])
+    if response_id != transaction_id or flags & 0x8000 == 0 or flags & 0x000F:
+        raise ValueError("DNS query failed")
+
+    offset = 12
+    for _ in range(questions):
+        offset = skip_dns_name(packet, offset)
+        if offset + 4 > len(packet):
+            raise ValueError("truncated DNS question")
+        offset += 4
+
+    addresses = []
+    for _ in range(answers):
+        offset = skip_dns_name(packet, offset)
+        if offset + 10 > len(packet):
+            raise ValueError("truncated DNS answer")
+        record_type, record_class, _, length = struct.unpack(
+            "!HHIH", packet[offset:offset + 10]
+        )
+        offset += 10
+        value = packet[offset:offset + length]
+        if len(value) != length:
+            raise ValueError("truncated DNS value")
+        if record_type == 1 and record_class == 1 and length == 4:
+            address = socket.inet_ntoa(value)
+            if address not in addresses:
+                addresses.append(address)
+        offset += length
+    return addresses
+
+
+def resolve_host_on_device(device, hostname, dns_server, mark):
+    if not valid_ipv4(dns_server):
+        raise ValueError("invalid DNS server")
+    last_error = None
+    for _ in range(2):
+        transaction_id = struct.unpack("!H", os.urandom(2))[0]
+        request = struct.pack("!HHHHHH", transaction_id, 0x0100, 1, 0, 0, 0)
+        request += encode_dns_name(hostname) + struct.pack("!HH", 1, 1)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.settimeout(3)
+            set_wan_socket_options(sock, device, mark)
+            sock.connect((dns_server, 53))
+            sock.send(request)
+            addresses = parse_dns_a_records(sock.recv(4096), transaction_id)
+            if addresses:
+                return addresses
+            last_error = ValueError("DNS response has no IPv4 address")
+        except (OSError, ValueError, socket.timeout) as error:
+            last_error = error
+        finally:
+            sock.close()
+    raise last_error or ValueError("DNS query failed")
+
+
+def listener_owner(protocol, port):
+    try:
+        result = run(["netstat", "-lntup"], timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        return "another local service"
+
+    wanted = "%s" % port
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 4 or not fields[0].startswith(protocol):
+            continue
+        local_address = fields[3]
+        if local_address.rsplit(":", 1)[-1] != wanted:
+            continue
+        return fields[-1] if "/" in fields[-1] else "another local service"
+    return "another local service"
+
+
+def check_port_available(device, protocol, port, mark):
+    if protocol not in ("tcp", "udp"):
+        raise ValueError("protocol must be tcp or udp")
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be from 1 to 65535")
+    socket_type = socket.SOCK_STREAM if protocol == "tcp" else socket.SOCK_DGRAM
+    sock = socket.socket(socket.AF_INET, socket_type)
+    try:
+        set_wan_socket_options(sock, device, mark, reuse=True)
+        sock.bind(("0.0.0.0", port))
+    except OSError as error:
+        if error.errno == errno.EADDRINUSE:
+            owner = listener_owner(protocol, port)
+            raise OSError(
+                errno.EADDRINUSE,
+                "%s port %s is already used by %s" %
+                (protocol.upper(), port, owner),
+            )
+        raise
+    finally:
+        sock.close()
+
+
+def parse_uci_show(config):
+    try:
+        result = run(["uci", "-q", "show", config], timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+
+    sections = {}
+    prefix = config + "."
+    for line in result.stdout.splitlines():
+        if not line.startswith(prefix) or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        path = key[len(prefix):].split(".", 1)
+        if len(path) == 1:
+            sections.setdefault(path[0], {})[".type"] = value.strip("'")
+            continue
+        section, option = path
+        value = value.strip()
+        if value.startswith("'") and value.endswith("'"):
+            value = value[1:-1]
+        sections.setdefault(section, {})[option] = value
+    return sections
+
+
+def mwan_interfaces():
+    try:
+        result = run(["uci", "-q", "show", "mwan3"], timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+    names = []
+    for line in result.stdout.splitlines():
+        match = re.match(r"^mwan3\.([^.=]+)=interface$", line)
+        if match:
+            names.append(match.group(1))
+    return names
+
+
+def interface_status(name):
+    try:
+        result = run(
+            ["ubus", "call", "network.interface.%s" % name, "status"], timeout=3
+        )
+        data = json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        data = {}
+
+    addresses = data.get("ipv4-address") or []
+    inside_ip = ""
+    for address in addresses:
+        candidate = address.get("address", "") if isinstance(address, dict) else ""
+        if valid_ipv4(candidate):
+            inside_ip = candidate
+            break
+
+    return {
+        "interface": name,
+        "device": str(data.get("l3_device") or ""),
+        "inside_ip": inside_ip,
+        "up": bool(data.get("up")),
+    }
+
+
+def distinct_interfaces():
+    statuses = [interface_status(name) for name in mwan_interfaces()]
+    by_name = {item["interface"]: item for item in statuses}
+    result = []
+    seen_devices = set()
+
+    for item in statuses:
+        name = item["interface"]
+        device = item["device"]
+        if name.endswith("_6") and by_name.get(name[:-2]):
+            continue
+        if device and device in seen_devices:
+            continue
+        if device:
+            seen_devices.add(device)
+        result.append(item)
+    return result
+
+
+def resolve_on_wan(device, hostname, dns_server, mark):
+    try:
+        return resolve_host_on_device(device, hostname, dns_server, mark)
+    except (OSError, UnicodeError, ValueError, socket.timeout):
+        return []
+
+
+def mapped_address(response, transaction_id):
+    if len(response) < 20:
+        raise ValueError("short STUN response")
+    message_type, length, cookie = struct.unpack("!HHI", response[:8])
+    if message_type != 0x0101 or cookie != 0x2112A442:
+        raise ValueError("unexpected STUN response")
+    if response[8:20] != transaction_id:
+        raise ValueError("STUN transaction mismatch")
+
+    offset = 20
+    end = min(len(response), 20 + length)
+    while offset + 4 <= end:
+        attribute_type, attribute_length = struct.unpack("!HH", response[offset:offset + 4])
+        value = response[offset + 4:offset + 4 + attribute_length]
+        if attribute_length >= 8 and len(value) >= 8 and value[1] == 0x01:
+            if attribute_type == 0x0020:
+                port = struct.unpack("!H", value[2:4])[0] ^ 0x2112
+                raw_ip = bytes(
+                    byte ^ mask
+                    for byte, mask in zip(value[4:8], struct.pack("!I", 0x2112A442))
+                )
+                return socket.inet_ntoa(raw_ip), port
+            if attribute_type == 0x0001:
+                return socket.inet_ntoa(value[4:8]), struct.unpack("!H", value[2:4])[0]
+        offset += 4 + ((attribute_length + 3) & ~3)
+    raise ValueError("STUN response has no IPv4 mapped address")
+
+
+def stun_probe(device, server, port, mark):
+    transaction_id = os.urandom(12)
+    request = struct.pack("!HHI", 0x0001, 0, 0x2112A442) + transaction_id
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.settimeout(2.5)
+        set_wan_socket_options(sock, device, mark)
+        sock.connect((server, port))
+        inside_ip, inside_port = sock.getsockname()
+        sock.send(request)
+        public_ip, public_port = mapped_address(sock.recv(2048), transaction_id)
+        return inside_ip, inside_port, public_ip, public_port
+    finally:
+        sock.close()
+
+
+def probe_interface(status, dns_server, mark):
+    result = dict(status)
+    result.update({
+        "public_ip": "",
+        "public_port": None,
+        "nat": None,
+        "status": "offline",
+        "error": "",
+    })
+    result.pop("up", None)
+
+    if not status["up"] or not status["device"]:
+        result["error"] = "interface is not up"
+        return result
+
+    errors = []
+    for hostname, port in STUN_SERVERS:
+        addresses = resolve_on_wan(status["device"], hostname, dns_server, mark)
+        if not addresses:
+            errors.append("%s did not resolve" % hostname)
+            continue
+        for address in addresses:
+            try:
+                inside_ip, _, public_ip, public_port = stun_probe(
+                    status["device"], address, port, mark
+                )
+                if valid_ipv4(inside_ip):
+                    result["inside_ip"] = inside_ip
+                result.update({
+                    "public_ip": public_ip,
+                    "public_port": public_port,
+                    "nat": result["inside_ip"] != public_ip,
+                    "status": "ok",
+                })
+                return result
+            except (OSError, ValueError, socket.timeout) as error:
+                errors.append("%s:%s %s" % (address, port, error))
+
+    result["status"] = "error"
+    result["error"] = "; ".join(errors[-3:]) or "no STUN server responded"
+    return result
+
+
+def probe_all():
+    dns_server = uci_get("natter.globals.dns_server", DEFAULT_DNS)
+    try:
+        mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
+        if mark <= 0:
+            raise ValueError
+    except ValueError:
+        mark = int(DEFAULT_MARK, 0)
+
+    results = [
+        probe_interface(status, dns_server, mark)
+        for status in distinct_interfaces()
+    ]
+    print(json.dumps(results, separators=(",", ":")))
+
+
+def config_check():
+    config = parse_uci_show("natter")
+    global_enabled = config.get("globals", {}).get("enabled") == "1"
+    try:
+        mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
+        if mark <= 0:
+            raise ValueError
+    except ValueError:
+        mark = int(DEFAULT_MARK, 0)
+
+    configured = []
+    for section, options in config.items():
+        if options.get(".type") != "instance" or options.get("enabled") != "1":
+            continue
+        interface = options.get("interface", "")
+        protocol = options.get("protocol", "tcp")
+        try:
+            port = int(options.get("bind_port", ""), 10)
+        except ValueError:
+            port = 0
+        status = interface_status(interface)
+        protocols = ("tcp", "udp") if protocol == "both" else (protocol,)
+
+        for current_protocol in protocols:
+            configured.append({
+                "section": section,
+                "interface": interface,
+                "device": status["device"],
+                "interface_up": status["up"],
+                "protocol": current_protocol,
+                "bind_port": port or None,
+                "status": "ok",
+                "error": "",
+            })
+
+    binding_sections = {}
+    for item in configured:
+        key = (item["device"], item["protocol"], item["bind_port"])
+        if item["device"] and item["protocol"] in ("tcp", "udp") and item["bind_port"]:
+            binding_sections.setdefault(key, []).append(item["section"])
+
+    results = []
+    for item in configured:
+        current_protocol = item["protocol"]
+        port = item["bind_port"] or 0
+        status_up = item.pop("interface_up")
+        duplicate_sections = binding_sections.get(
+            (item["device"], current_protocol, item["bind_port"]), []
+        )
+        if not global_enabled:
+            item["status"] = "disabled"
+            item["error"] = "global Natter switch is disabled"
+        elif current_protocol not in ("tcp", "udp"):
+            item["status"] = "error"
+            item["error"] = "protocol must be tcp, udp or both"
+        elif not status_up or not item["device"]:
+            item["status"] = "offline"
+            item["error"] = "interface is not up"
+        elif not 1 <= port <= 65535:
+            item["status"] = "error"
+            item["error"] = "inside bind port is invalid"
+        elif len(duplicate_sections) > 1:
+            item["status"] = "conflict"
+            item["error"] = (
+                "%s/%s port %s is duplicated by mappings: %s" %
+                (item["device"], current_protocol.upper(), port,
+                 ", ".join(duplicate_sections))
+            )
+        else:
+            try:
+                check_port_available(item["device"], current_protocol, port, mark)
+            except OSError as error:
+                item["status"] = "conflict" if error.errno == errno.EADDRINUSE else "error"
+                item["error"] = error.strerror or str(error)
+        results.append(item)
+
+    print(json.dumps(results, separators=(",", ":")))
+
+
+def runtime_status():
+    by_instance = {}
+    for path in sorted(glob.glob("/var/run/natter/*.state")):
+        item = {}
+        try:
+            with open(path, "r", encoding="utf-8") as state_file:
+                for line in state_file:
+                    key, separator, value = line.rstrip("\r\n").partition("=")
+                    if separator and key:
+                        item[key] = value
+        except OSError as error:
+            instance = os.path.basename(path).rsplit(".state", 1)[0]
+            by_instance[instance] = {
+                "instance": instance,
+                "status": "error",
+                "error": str(error),
+            }
+            continue
+        item.setdefault("instance", os.path.basename(path).rsplit(".state", 1)[0])
+        item.setdefault("status", "ok" if item.get("public") not in (None, "", "-") else "unknown")
+        by_instance[item["instance"]] = item
+
+    try:
+        service_result = run(
+            ["ubus", "call", "service", "list", '{"name":"natter"}'],
+            timeout=3,
+        )
+        service_data = json.loads(service_result.stdout) if service_result.returncode == 0 else {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        service_data = {}
+
+    config = parse_uci_show("natter")
+    instances = service_data.get("natter", {}).get("instances", {})
+    if not isinstance(instances, dict):
+        instances = {}
+
+    for instance, process in instances.items():
+        if not isinstance(process, dict):
+            continue
+        command = process.get("command") or []
+        environment = process.get("env") or {}
+        if not isinstance(command, list):
+            command = []
+        if not isinstance(environment, dict):
+            environment = {}
+
+        section = str(environment.get("NATTER_CONFIG_SECTION") or instance)
+        interface = str(environment.get("NATTER_INTERFACE") or "")
+        protocol = "udp" if "-u" in command else "tcp"
+        bind_port = ""
+        try:
+            bind_index = command.index("-b")
+            bind_port = str(command[bind_index + 1])
+        except (ValueError, IndexError):
+            pass
+
+        current = by_instance.get(instance)
+        if current is None:
+            section_config = config.get(section, {})
+            inside_ip = interface_status(interface)["inside_ip"] if interface else ""
+            target_ip = section_config.get("target_ip", "")
+            target_port = section_config.get("target_port", "")
+            current = {
+                "instance": instance,
+                "config": section,
+                "interface": interface,
+                "protocol": protocol,
+                "status": "waiting" if process.get("running") else "error",
+                "error": (
+                    "waiting for a STUN mapping response" if process.get("running")
+                    else "mapping process is not running"
+                ),
+                "mapped_inside": (
+                    "%s:%s" % (inside_ip, bind_port)
+                    if inside_ip and bind_port else "-"
+                ),
+                "public": "-",
+                "target": (
+                    "%s:%s" % (target_ip, target_port)
+                    if target_ip and target_port else "-"
+                ),
+                "updated_at": "",
+            }
+            by_instance[instance] = current
+        elif not process.get("running") and current.get("status") == "ok":
+            current["status"] = "error"
+            current["error"] = "mapping process is not running"
+
+    results = [by_instance[name] for name in sorted(by_instance)]
+    print(json.dumps(results, separators=(",", ":")))
+
+
+def resolve_command(arguments):
+    if len(arguments) != 4:
+        raise ValueError("usage: natter-probe resolve DEVICE HOST DNS MARK")
+    device, hostname, dns_server, mark_text = arguments
+    mark = int(mark_text, 0)
+    if mark <= 0:
+        raise ValueError("invalid socket mark")
+    addresses = resolve_host_on_device(device, hostname, dns_server, mark)
+    for address in addresses:
+        print(address)
+    return 0 if addresses else 1
+
+
+def check_port_command(arguments):
+    if len(arguments) != 4:
+        raise ValueError("usage: natter-probe check-port DEVICE PROTOCOL PORT MARK")
+    device, protocol, port_text, mark_text = arguments
+    port = int(port_text, 10)
+    mark = int(mark_text, 0) if mark_text not in ("", "-") else 0
+    if mark < 0:
+        raise ValueError("invalid socket mark")
+    check_port_available(device, protocol, port, mark)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        if len(sys.argv) > 1 and sys.argv[1] == "resolve":
+            sys.exit(resolve_command(sys.argv[2:]))
+        if len(sys.argv) > 1 and sys.argv[1] == "check-port":
+            sys.exit(check_port_command(sys.argv[2:]))
+        if len(sys.argv) > 1 and sys.argv[1] == "config-check":
+            if len(sys.argv) != 2:
+                raise ValueError("usage: natter-probe config-check")
+            config_check()
+            sys.exit(0)
+        if len(sys.argv) > 1 and sys.argv[1] == "runtime-status":
+            if len(sys.argv) != 2:
+                raise ValueError("usage: natter-probe runtime-status")
+            runtime_status()
+            sys.exit(0)
+        if len(sys.argv) > 1:
+            raise ValueError(
+                "usage: natter-probe [config-check|runtime-status|"
+                "check-port DEVICE PROTOCOL PORT MARK|"
+                "resolve DEVICE HOST DNS MARK]"
+            )
+        probe_all()
+    except (OSError, UnicodeError, ValueError, socket.timeout) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,193 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/network.sh
+
+NFT_DIR="/usr/share/natter/runtime"
+DSTNAT_FILE="$NFT_DIR/dstnat.nft"
+FORWARD_FILE="$NFT_DIR/forward.nft"
+INPUT_FILE="$NFT_DIR/input.nft"
+PROBE_HELPER="/usr/libexec/natter-probe"
+
+log_msg() {
+	logger -t natter-firewall -- "$*"
+}
+
+valid_uint() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
+}
+
+valid_ipv4() {
+	awk -F. '
+		NF != 4 { exit 1 }
+		{
+			for (i = 1; i <= 4; i++)
+				if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255)
+					exit 1
+		}
+	' <<-EOF >/dev/null 2>&1
+	$1
+	EOF
+}
+
+safe_name() {
+	case "$1" in
+		''|*[!A-Za-z0-9_.:-]*) return 1 ;;
+	esac
+}
+
+append_protocol_rules() {
+	local section="$1" protocol="$2" interface="$3" bind_port="$4"
+	local target_ip="$5" target_port="$6" device="$7" wan_ip="$8"
+	local port_error
+
+	case " $SEEN_BINDINGS " in
+		*" $device/$protocol/$bind_port "*)
+			log_msg "$section: duplicate $device/$protocol bind_port $bind_port"
+			RENDER_ERROR=1
+			return 0
+			;;
+	esac
+	SEEN_BINDINGS="$SEEN_BINDINGS $device/$protocol/$bind_port"
+	if ! port_error="$("$PROBE_HELPER" check-port "$device" "$protocol" \
+		"$bind_port" "$PORT_MARK" 2>&1)"; then
+		[ -n "$port_error" ] || port_error="$protocol port $bind_port is unavailable"
+		log_msg "$section/$protocol: firewall rule skipped: $port_error"
+		return 0
+	fi
+
+	printf 'iifname "%s" ip daddr %s %s dport %s counter dnat ip to %s:%s comment "natter:%s"\n' \
+		"$device" "$wan_ip" "$protocol" "$bind_port" "$target_ip" "$target_port" \
+		"$section" >> "$TMP_DSTNAT"
+	printf 'iifname "%s" ip daddr %s %s dport %s ct status dnat counter accept comment "natter:%s"\n' \
+		"$device" "$target_ip" "$protocol" "$target_port" "$section" >> "$TMP_FORWARD"
+	printf 'iifname "%s" ip daddr %s %s dport %s ct status dnat counter accept comment "natter:%s"\n' \
+		"$device" "$target_ip" "$protocol" "$target_port" "$section" >> "$TMP_INPUT"
+}
+
+append_instance() {
+	local section="$1"
+	local enabled interface protocol bind_port target_ip target_port
+	local device wan_ip
+
+	config_get_bool enabled "$section" enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+	config_get interface "$section" interface
+	config_get protocol "$section" protocol tcp
+	config_get bind_port "$section" bind_port
+	config_get target_ip "$section" target_ip
+	config_get target_port "$section" target_port
+
+	case "$protocol" in
+		tcp|udp|both) ;;
+		*) log_msg "$section: protocol must be tcp, udp or both"; RENDER_ERROR=1; return 0 ;;
+	esac
+	valid_uint "$bind_port" || {
+		log_msg "$section: bind_port must be from 1 to 65535"
+		RENDER_ERROR=1
+		return 0
+	}
+	valid_uint "$target_port" || {
+		log_msg "$section: target_port must be from 1 to 65535"
+		RENDER_ERROR=1
+		return 0
+	}
+	valid_ipv4 "$target_ip" || {
+		log_msg "$section: target_ip must be an IPv4 address"
+		RENDER_ERROR=1
+		return 0
+	}
+	safe_name "$section" || {
+		log_msg "unsafe UCI section name rejected"
+		RENDER_ERROR=1
+		return 0
+	}
+
+	network_get_device device "$interface"
+	network_get_ipaddr wan_ip "$interface"
+	if ! safe_name "$device" || ! valid_ipv4 "$wan_ip"; then
+		log_msg "$section: interface '$interface' is not ready; firewall rule skipped"
+		return 0
+	fi
+
+
+	case "$protocol" in
+		both)
+			append_protocol_rules "$section" tcp "$interface" "$bind_port" \
+				"$target_ip" "$target_port" "$device" "$wan_ip"
+			append_protocol_rules "$section" udp "$interface" "$bind_port" \
+				"$target_ip" "$target_port" "$device" "$wan_ip"
+		;;
+		*)
+			append_protocol_rules "$section" "$protocol" "$interface" "$bind_port" \
+				"$target_ip" "$target_port" "$device" "$wan_ip"
+		;;
+	esac
+}
+
+install_if_changed() {
+	local source="$1"
+	local target="$2"
+
+	if cmp -s "$source" "$target" 2>/dev/null; then
+		rm -f "$source"
+	else
+		mv -f "$source" "$target"
+		CHANGED=1
+	fi
+}
+
+render_rules() {
+	local action="$1"
+	local enabled=0 isolation=1
+
+	mkdir -p "$NFT_DIR"
+	TMP_DIR="$(mktemp -d /tmp/natter-firewall.XXXXXX)" || return 1
+	TMP_DSTNAT="$TMP_DIR/dstnat.nft"
+	TMP_FORWARD="$TMP_DIR/forward.nft"
+	TMP_INPUT="$TMP_DIR/input.nft"
+	: > "$TMP_DSTNAT"
+	: > "$TMP_FORWARD"
+	: > "$TMP_INPUT"
+
+	if [ "$action" = sync ]; then
+		config_load natter
+		config_get_bool enabled globals enabled 0
+		config_get_bool isolation globals mwan3_isolation 1
+		if [ "$isolation" -eq 1 ]; then
+			PORT_MARK="$(uci -q get mwan3.globals.mmx_mask)"
+			[ -n "$PORT_MARK" ] || PORT_MARK='0x3F00'
+		else
+			PORT_MARK='-'
+		fi
+		SEEN_BINDINGS=""
+		RENDER_ERROR=0
+		[ "$enabled" -eq 0 ] || config_foreach append_instance instance
+		if [ "$RENDER_ERROR" -ne 0 ]; then
+			rm -rf "$TMP_DIR"
+			return 1
+		fi
+	fi
+
+	CHANGED=0
+	install_if_changed "$TMP_DSTNAT" "$DSTNAT_FILE"
+	install_if_changed "$TMP_FORWARD" "$FORWARD_FILE"
+	install_if_changed "$TMP_INPUT" "$INPUT_FILE"
+	rmdir "$TMP_DIR" 2>/dev/null
+
+	if [ "$CHANGED" -eq 1 ]; then
+		fw4 reload || {
+			log_msg "firewall4 rejected the generated Natter rules"
+			return 1
+		}
+	fi
+}
+
+case "${1:-sync}" in
+	sync) render_rules sync ;;
+	clear) render_rules clear ;;
+	*) echo "usage: natter-firewall {sync|clear}" >&2; exit 2 ;;
+esac

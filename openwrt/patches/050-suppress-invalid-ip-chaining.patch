@@ -1,0 +1,5 @@
+--- a/natter.py
++++ b/natter.py
+@@ -1523,1 +1523,1 @@
+-            raise ValueError("Invalid IP address: %s" % s)
++            raise ValueError("Invalid IP address: %s" % s) from None

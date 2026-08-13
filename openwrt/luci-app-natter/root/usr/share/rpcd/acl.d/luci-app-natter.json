@@ -1,0 +1,23 @@
+{
+	"luci-app-natter": {
+		"description": "授予 Natter 設定與服務控制權限",
+		"read": {
+			"file": {
+				"/etc/init.d/natter status": [ "exec" ],
+				"/usr/sbin/natterctl status": [ "exec" ],
+				"/usr/sbin/natterctl status-json": [ "exec" ],
+				"/usr/sbin/natterctl probe-all": [ "exec" ],
+				"/usr/sbin/natterctl check-config": [ "exec" ]
+			},
+			"uci": [ "mwan3", "natter", "network" ]
+		},
+		"write": {
+			"file": {
+				"/etc/init.d/natter start": [ "exec" ],
+				"/etc/init.d/natter stop": [ "exec" ],
+				"/etc/init.d/natter restart": [ "exec" ]
+			},
+			"uci": [ "natter" ]
+		}
+	}
+}

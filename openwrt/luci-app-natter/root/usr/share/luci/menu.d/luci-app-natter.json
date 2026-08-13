@@ -1,0 +1,14 @@
+{
+	"admin/services/natter": {
+		"title": "Natter",
+		"order": 65,
+		"action": {
+			"type": "view",
+			"path": "natter/natter"
+		},
+		"depends": {
+			"acl": [ "luci-app-natter" ],
+			"uci": { "natter": true }
+		}
+	}
+}
