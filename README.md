@@ -5,6 +5,27 @@ Expose your port behind full-cone NAT to the Internet.
 [中文文档](docs/README.md)
 
 
+## OpenWrt 多 WAN 版本
+
+本 Fork 同時提供可在 OpenWrt 23.05 以上使用的多 WAN 整合套件，適合搭配
+`mwan3`。它會將 DNS、STUN、Keepalive 與映射 socket 綁定到指定 WAN，使用
+mwan3 bypass mark，避免 failover 或負載平衡將流量切換到其他出口。
+
+- LuCI 正體中文管理介面，支援 TCP、UDP 與 TCP + UDP 獨立映射
+- 顯示各 WAN 的公網 IPv4、NAT 狀態、埠衝突檢查與執行狀態
+- 手機畫面會將表格改為卡片排列，避免欄位重疊
+- OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
+- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r11-luci-r13)
+
+Release 內含：
+
+- `natter-2.2.1-r11.apk`
+- `luci-app-natter-1.0.0-r13.apk`
+
+在支援 APK 的 OpenWrt 上可依序安裝核心與 LuCI 套件；若使用自行建置的
+OpenWrt，請依 `openwrt/README.md` 將 package 放入 source tree 或 SDK。
+
+
 ## Quick start
 
 ```bash
