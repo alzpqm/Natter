@@ -295,18 +295,19 @@ start_instance() {
 
 	case "$protocol" in
 		tcp|udp)
-			start_protocol_instance "$section" "$protocol" "$section"
+			start_protocol_instance "$section" "$protocol" "$section" || failed=1
 		;;
 		both)
 			start_protocol_instance "$section" tcp "${section}_tcp" || failed=1
 			start_protocol_instance "$section" udp "${section}_udp" || failed=1
-			return "$failed"
 		;;
 		*)
 			log_msg "$section: protocol must be tcp, udp or both"
-			return 1
+			failed=1
 		;;
 	esac
+	[ "$failed" -eq 0 ] || START_ERROR=1
+	return 0
 }
 
 start_service() {
@@ -321,7 +322,12 @@ start_service() {
 	}
 
 	"$FIREWALL_HELPER" sync || return 1
+	START_ERROR=0
 	config_foreach start_instance instance
+	if [ "$START_ERROR" -ne 0 ]; then
+		log_msg 'one or more Natter instances failed validation before procd start'
+		return 1
+	fi
 }
 
 stop_service() {

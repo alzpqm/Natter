@@ -5,6 +5,7 @@
 			"file": {
 				"/etc/init.d/natter status": [ "exec" ],
 				"/usr/sbin/natterctl status": [ "exec" ],
+				"/usr/sbin/natterctl service-status": [ "exec" ],
 				"/usr/sbin/natterctl status-json": [ "exec" ],
 				"/usr/sbin/natterctl probe-all": [ "exec" ],
 				"/usr/sbin/natterctl check-config": [ "exec" ]

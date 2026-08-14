@@ -15,7 +15,9 @@ echo "SERVICE=$(/etc/init.d/natter status)"
 status_json=$(/usr/sbin/natterctl status-json)
 check_json=$(/usr/sbin/natterctl check-config)
 probe_json=$(/usr/sbin/natterctl probe-all)
+service_json=$(/usr/sbin/natterctl service-status)
 STATUS_JSON="$status_json" CHECK_JSON="$check_json" PROBE_JSON="$probe_json" \
+SERVICE_JSON="$service_json" \
 python3 - <<"PY"
 import json
 import os
@@ -23,6 +25,7 @@ import os
 status = json.loads(os.environ["STATUS_JSON"])
 checks = json.loads(os.environ["CHECK_JSON"])
 probes = json.loads(os.environ["PROBE_JSON"])
+service = json.loads(os.environ["SERVICE_JSON"])
 
 bad_status = [item.get("instance") for item in status if item.get("status") != "ok"]
 bad_checks = [item.get("section") for item in checks if item.get("status") != "ok"]
@@ -38,6 +41,11 @@ print("CHECKS=%d OK=%d NON_OK=%s" %
       (len(checks), len(checks) - len(bad_checks), bad_checks))
 print("PROBES=%d OK=%d NON_OK=%s" %
       (len(probes), len(probes) - len(bad_probes), bad_probes))
+print("SERVICE_STATE=%s GLOBAL_ENABLED=%s INIT_ENABLED=%s PROCD_RUNNING=%s" %
+      (service.get("state", "unknown"),
+       service.get("global_enabled", "unknown"),
+       service.get("init_enabled", "unknown"),
+       service.get("procd_running", "unknown")))
 print("PUBLIC_IPS=%s" % public)
 PY
 

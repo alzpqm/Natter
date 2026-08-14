@@ -17,8 +17,35 @@ show_status() {
 	[ "$found" -eq 1 ] || echo "no active public mappings reported"
 }
 
+show_service_status() {
+	local global_enabled=0 init_enabled=0 procd_running=0 state reason
+
+	[ "$(uci -q get natter.globals.enabled 2>/dev/null)" = 1 ] && \
+		global_enabled=1
+	/etc/init.d/natter enabled >/dev/null 2>&1 && init_enabled=1
+	/etc/init.d/natter running >/dev/null 2>&1 && procd_running=1
+
+	if [ "$global_enabled" -eq 0 ]; then
+		state=disabled
+		reason='global Natter switch is disabled'
+	elif [ "$procd_running" -eq 1 ]; then
+		state=running
+		reason='procd has at least one running instance'
+	elif [ "$init_enabled" -eq 0 ]; then
+		state=not-autostarted
+		reason='init service is not enabled at boot'
+	else
+		state=stopped
+		reason='no running procd instances; start may have failed'
+	fi
+
+	printf '{"state":"%s","reason":"%s","global_enabled":%s,"init_enabled":%s,"procd_running":%s}\n' \
+		"$state" "$reason" "$global_enabled" "$init_enabled" "$procd_running"
+}
+
 case "${1:-status}" in
 	status|mappings) show_status ;;
+	service-status) show_service_status ;;
 	firewall)
 		for chain in dstnat forward input; do
 			echo "[$chain]"
@@ -29,5 +56,5 @@ case "${1:-status}" in
 	probe-all) exec /usr/libexec/natter-probe ;;
 	check-config) exec /usr/libexec/natter-probe config-check ;;
 	status-json) exec /usr/libexec/natter-probe runtime-status ;;
-	*) echo "usage: natterctl {status|status-json|mappings|firewall|probe-all|check-config|restart}" >&2; exit 2 ;;
+	*) echo "usage: natterctl {status|service-status|status-json|mappings|firewall|probe-all|check-config|restart}" >&2; exit 2 ;;
 esac

@@ -9,6 +9,8 @@
 
 var STATUS_RUNNING = 'running';
 var STATUS_STOPPED = 'stopped';
+var STATUS_DISABLED = 'disabled';
+var STATUS_NOT_AUTOSTARTED = 'not-autostarted';
 var STATUS_UNKNOWN = 'unknown';
 var BASE_STYLE =
 	'.natter-page .cbi-section{border-radius:6px;margin-bottom:1.1em}' +
@@ -124,6 +126,20 @@ function parseServiceStatus(result) {
 		return STATUS_RUNNING;
 
 	return STATUS_UNKNOWN;
+}
+
+function parseServiceMetadata(result) {
+	var data;
+
+	if (!result || result.code !== 0)
+		return null;
+	try {
+		data = JSON.parse(String(result.stdout || '{}'));
+	}
+	catch (error) {
+		return null;
+	}
+	return data && typeof data.state === 'string' ? data : null;
 }
 
 function validEndpoint(sectionId, value) {
@@ -460,9 +476,10 @@ return view.extend({
 	getRuntime: function() {
 		return Promise.all([
 			L.resolveDefault(fs.exec('/etc/init.d/natter', [ 'status' ]), null),
-			L.resolveDefault(fs.exec('/usr/sbin/natterctl', [ 'status-json' ]), null)
+			L.resolveDefault(fs.exec('/usr/sbin/natterctl', [ 'status-json' ]), null),
+			L.resolveDefault(fs.exec('/usr/sbin/natterctl', [ 'service-status' ]), null)
 		]).then(function(results) {
-			var mappings = [], mappingError = '';
+			var mappings = [], mappingError = '', service;
 
 			if (!results[1] || results[1].code !== 0) {
 				mappingError = results[1] && (results[1].stderr || results[1].stdout) ||
@@ -479,8 +496,10 @@ return view.extend({
 					mappingError = _('映射狀態回傳了無效資料。');
 				}
 			}
+			service = parseServiceMetadata(results[2]);
 			return {
-				state: parseServiceStatus(results[0]),
+				state: service ? service.state : parseServiceStatus(results[0]),
+				service: service,
 				mappings: mappings,
 				mappingError: String(mappingError || '').trim()
 			};
@@ -494,9 +513,25 @@ return view.extend({
 	statusLabel: function(state) {
 		if (state === STATUS_RUNNING)
 			return { text: _('執行中'), cssClass: 'label success' };
+		if (state === STATUS_DISABLED)
+			return { text: _('已停用'), cssClass: 'label warning' };
+		if (state === STATUS_NOT_AUTOSTARTED)
+			return { text: _('未啟用開機自啟'), cssClass: 'label warning' };
 		if (state === STATUS_STOPPED)
-			return { text: _('已停止'), cssClass: 'label warning' };
+			return { text: _('已停止（無執行實例）'), cssClass: 'label warning' };
 		return { text: _('未知'), cssClass: 'label warning' };
+	},
+
+	statusReason: function(state) {
+		if (state === STATUS_DISABLED)
+			return _('全域 Natter 開關已停用。');
+		if (state === STATUS_NOT_AUTOSTARTED)
+			return _('服務未設為開機啟用，但可以手動啟動。');
+		if (state === STATUS_STOPPED)
+			return _('沒有執行中的 procd 實例；可能是啟動失敗。');
+		if (state === STATUS_RUNNING)
+			return _('procd 至少有一個執行中的 Natter 實例。');
+		return _('無法判斷服務狀態。');
 	},
 
 	updateRuntimeTable: function(mappings, error) {
@@ -565,6 +600,8 @@ return view.extend({
 			: this.statusLabel(this.runtime.state);
 		this.statusNode.className = label.cssClass;
 		this.statusNode.textContent = label.text;
+		if (this.statusReasonNode)
+			this.statusReasonNode.textContent = this.statusReason(this.runtime.state);
 		if (this.lastRefreshNode)
 			this.lastRefreshNode.textContent = _('最後更新：%s').format(formatClockTime());
 		this.updateRuntimeSummary(this.runtime.mappings);
@@ -575,8 +612,10 @@ return view.extend({
 			Object.keys(this.buttons).forEach(function(name) {
 				this.buttons[name].setAttribute('aria-busy', this.busy ? 'true' : 'false');
 			}, this);
-			this.buttons.start.disabled = locked || this.runtime.state === STATUS_RUNNING;
-			this.buttons.stop.disabled = locked || this.runtime.state === STATUS_STOPPED;
+			this.buttons.start.disabled = locked || this.runtime.state === STATUS_RUNNING ||
+				this.runtime.state === STATUS_DISABLED;
+			this.buttons.stop.disabled = locked || this.runtime.state === STATUS_STOPPED ||
+				this.runtime.state === STATUS_DISABLED;
 			this.buttons.restart.disabled = locked || this.runtime.state !== STATUS_RUNNING;
 			this.buttons.refresh.disabled = this.busy;
 		}
@@ -679,6 +718,7 @@ return view.extend({
 		this.buttons = {};
 		this.summaryNodes = {};
 		this.statusNode = E('span');
+		this.statusReasonNode = E('span', { 'class': 'natter-inline-note' });
 		this.lastRefreshNode = E('span', {
 			'class': 'natter-refresh-time',
 			'aria-live': 'off'
@@ -694,7 +734,9 @@ return view.extend({
 			]),
 			E('div', { 'class': 'cbi-value' }, [
 				E('label', { 'class': 'cbi-value-title' }, _('服務')),
-				E('div', { 'class': 'cbi-value-field natter-status-live', 'aria-live': 'polite' }, this.statusNode)
+				E('div', { 'class': 'cbi-value-field natter-status-live', 'aria-live': 'polite' }, [
+					this.statusNode, ' ', this.statusReasonNode
+				])
 			]),
 			E('div', { 'class': 'natter-summary-grid', 'aria-live': 'polite' }, [
 				this.makeSummaryCard('total', _('映射數'), 'total'),

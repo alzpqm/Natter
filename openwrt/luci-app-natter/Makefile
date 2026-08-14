@@ -2,8 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-natter
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=13
-PKGARCH:=all
+PKG_RELEASE:=14
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -13,6 +12,7 @@ define Package/luci-app-natter
   SUBMENU:=3. Applications
   TITLE:=Natter 的 LuCI 管理介面
   DEPENDS:=+natter
+  PKGARCH:=all
 endef
 
 define Package/luci-app-natter/description

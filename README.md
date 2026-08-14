@@ -15,14 +15,14 @@ mwan3 bypass mark，避免 failover 或負載平衡將流量切換到其他出�
 - 顯示各 WAN 的公網 IPv4、NAT 狀態、埠衝突檢查與執行狀態
 - 手機畫面會將表格改為卡片排列，避免欄位重疊
 - OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
-- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r11-luci-r13)
+- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r12-luci-r14)
 
 Release 內含：
 
-- `natter-2.2.1-r11.apk`
-- `luci-app-natter-1.0.0-r13.apk`
-- `natter_2.2.1-r11_all.ipk`（OpenWrt 22.03）
-- `luci-app-natter_1.0.0-r13_all.ipk`（OpenWrt 22.03）
+- `natter-2.2.1-r12.apk`
+- `luci-app-natter-1.0.0-r14.apk`
+- `natter_2.2.1-r12_all.ipk`（OpenWrt 22.03）
+- `luci-app-natter_1.0.0-r14_all.ipk`（OpenWrt 22.03）
 
 OpenWrt 23.05 以上使用 APK；OpenWrt 22.03 使用舊式 IPK。以下指令會從 Fork
 的最新 Release 取得對應套件。22.03 以前的 firewall3 版本尚未納入，因為本整合
