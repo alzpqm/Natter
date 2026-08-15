@@ -180,6 +180,26 @@ log_fw4_failure() {
 	log_msg "firewall4 $action failed: $detail"
 }
 
+firewall_table_loaded() {
+	nft list table inet fw4 >/dev/null 2>&1
+}
+
+apply_fw4_update() {
+	local output="$1"
+	local action=reload
+
+	# fw4 reload refuses to run without its state file.  During a WAN
+	# transition the nft table can still be present while that file is being
+	# recreated by the firewall service; restart serializes on fw4's lock and
+	# rebuilds both the table and state atomically in that case.
+	if [ ! -f /var/run/fw4.state ] && firewall_table_loaded; then
+		action=restart
+		log_msg 'firewall4 state is missing while table is loaded; using restart to recover'
+	fi
+
+	fw4 "$action" >"$output" 2>&1
+}
+
 render_rules() {
 	local action="$1"
 	local enabled=0 isolation=1
@@ -234,10 +254,10 @@ render_rules() {
 		fi
 
 		fw4_reload_output="$TMP_DIR/fw4-reload.log"
-		if ! fw4 reload >"$fw4_reload_output" 2>&1; then
+		if ! apply_fw4_update "$fw4_reload_output"; then
 			log_fw4_failure reload "$fw4_reload_output"
 			restore_runtime_files "$backup_dir"
-			if ! fw4 reload >"$TMP_DIR/fw4-rollback.log" 2>&1; then
+			if ! apply_fw4_update "$TMP_DIR/fw4-rollback.log"; then
 				log_fw4_failure rollback "$TMP_DIR/fw4-rollback.log"
 			else
 				log_msg 'restored the previous Natter runtime after firewall4 failure'

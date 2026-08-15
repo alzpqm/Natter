@@ -633,7 +633,10 @@ return view.extend({
 
 	waitForState: function(target, attempts) {
 		return this.getRuntime().then(L.bind(function(runtime) {
-			if (runtime.state === target || attempts <= 1)
+			var matched = Array.isArray(target)
+				? target.indexOf(runtime.state) !== -1
+				: runtime.state === target;
+			if (matched || attempts <= 1)
 				return runtime;
 			return sleep(500).then(L.bind(function() {
 				return this.waitForState(target, attempts - 1);
@@ -642,7 +645,9 @@ return view.extend({
 	},
 
 	serviceCommand: function(action) {
-		var target = action === 'stop' ? STATUS_STOPPED : STATUS_RUNNING;
+		var target = action === 'stop'
+			? [ STATUS_STOPPED, STATUS_NOT_AUTOSTARTED, STATUS_DISABLED ]
+			: STATUS_RUNNING;
 
 		if (this.busy || this.readonly)
 			return Promise.resolve();
@@ -656,7 +661,10 @@ return view.extend({
 					_('Natter 服務操作失敗。'));
 			return this.waitForState(target, 8);
 		}, this)).then(function(runtime) {
-			if (runtime.state !== target)
+			var matched = Array.isArray(target)
+				? target.indexOf(runtime.state) !== -1
+				: runtime.state === target;
+			if (!matched)
 				throw new Error(_('無法確認要求的服務狀態。'));
 			ui.addTimeLimitedNotification(null, E('p', _('Natter 服務已更新。')),
 				5000, 'info');
