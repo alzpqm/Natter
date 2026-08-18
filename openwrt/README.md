@@ -53,8 +53,8 @@ make package/natter/compile V=s
 make package/natter/luci-app-natter/compile V=s
 ```
 
-產生的 `.ipk`／`.apk` 可依該 OpenWrt 版本的套件管理方式安裝。OpenWrt 22.03
-使用 `.ipk` 與 `opkg`；OpenWrt 23.05 以上使用 `.apk` 與 `apk`。package 依賴
+產生的 `.ipk`／`.apk` 可依該 OpenWrt 版本的套件管理方式安裝。OpenWrt 22.03–24.10
+使用 `.ipk` 與 `opkg`；OpenWrt 25.12 以上使用 `.apk` 與 `apk`。package 依賴
 `python3-light` 與 `firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。OpenWrt 21.02 或更早版本使用
 firewall3，尚未納入此整合。
 
