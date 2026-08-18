@@ -1,16 +1,19 @@
-# Natter for OpenWrt（多 WAN／mwan3 隔離版）
+# Natter for OpenWrt（多 WAN／可選 mwan3 隔離版）
 
 這個目錄是一個可直接放入 OpenWrt source tree 或 SDK 的 package。它固定使用
-Natter 2.2.1，支援 OpenWrt 22.03 以上的 firewall4，並可為每條 WAN 啟動獨立的
+Natter 2.2.1，支援 OpenWrt 22.03 以上的 firewall4；`mwan3` 是可選整合，不是
+套件依賴。安裝 mwan3 時可為每條 WAN 啟動獨立的
 TCP／UDP Natter 實例，也可用一個設定同時啟動彼此獨立的 TCP + UDP 映射。
 
 ## 設計重點
 
 - 每個實例對應一個 OpenWrt logical interface，例如 `wan`、`wan2`。
-- Natter 長駐程序原生設定 `SO_BINDTODEVICE`，並把 mwan3 的 `mmx_mask` 設為
-  `SO_MARK` bypass mark；因此固定在指定 L3 device，也不會被 mwan3 負載平衡或 failover。
-- 內建 DNS 查詢也直接設定相同的 L3 device 與 bypass mark，不呼叫 `mwan3 use`，
-  因此不會被 mwan3 wrapper 的舊來源 IP 快取或 `LD_PRELOAD` fd 狀態干擾。
+- Natter 長駐程序原生設定 `SO_BINDTODEVICE`；安裝 mwan3 且啟用隔離時，會把
+  `mmx_mask` 設為 `SO_MARK` bypass mark，因此固定在指定 L3 device，也不會被
+  mwan3 負載平衡或 failover。
+- 內建 DNS 查詢也直接設定相同的 L3 device 與 bypass mark（未安裝 mwan3 時不設
+  mark），不呼叫 `mwan3 use`，因此不會被 mwan3 wrapper 的舊來源 IP 快取或
+  `LD_PRELOAD` fd 狀態干擾。
 - 啟動前先透過該 WAN 原生 socket 向 `119.29.29.29` 查詢 STUN／keepalive 網域，
   再把 IPv4 數字位址交給 Natter。這可避開本機代理的 fake-IP DNS，也避免 Natter
   程序內再次查 DNS。
@@ -45,13 +48,13 @@ make package/natter/luci-app-natter/compile V=s
 
 產生的 `.ipk`／`.apk` 可依該 OpenWrt 版本的套件管理方式安裝。OpenWrt 22.03
 使用 `.ipk` 與 `opkg`；OpenWrt 23.05 以上使用 `.apk` 與 `apk`。package 依賴
-`python3-light`、`mwan3` 與 `firewall4`。OpenWrt 21.02 或更早版本使用
+`python3-light` 與 `firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。OpenWrt 21.02 或更早版本使用
 firewall3，尚未納入此整合。
 
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。最新版目前為
-`openwrt-2.2.1-r13`，Release 同時提供 OpenWrt 25.12 的 APK 與
+`openwrt-2.2.1-r14`，Release 同時提供 OpenWrt 25.12 的 APK 與
 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀對應版本的套件管理指令。
 
 OpenWrt 23.05 以上（APK）：
@@ -88,7 +91,8 @@ opkg install --force-overwrite /tmp/luci-app-natter.ipk
 
 安裝 `luci-app-natter` 後，頁面位於 **Services → Natter**。首次安裝的全域開關
 預設關閉；建立並檢查 mapping 後再於頁面啟用，因此不會因安裝套件立即開放任何連入埠。
-頁面上方的 **WAN 公網位址** 面板會自動逐一檢查每個不重複的 mwan3 WAN，
+頁面上方的 **WAN 公網位址** 面板會自動逐一檢查每個不重複的 WAN；已安裝
+mwan3 時使用其介面清單，未安裝時改用已啟用 mapping 所選的 WAN，
 顯示 L3 裝置、WAN IPv4、公網 IPv4 與是否經過 NAT；也可按 **探測所有 WAN**
 重新檢查。探測使用各 WAN 獨立路由的中國大陸 UDP STUN，不會新增任何入站防火牆規則。
 **已設定的內部埠** 面板會用與 Natter 相同的裝置綁定、socket mark 與
@@ -100,9 +104,10 @@ opkg install --force-overwrite /tmp/luci-app-natter.ipk
 
 ## 多 WAN 設定
 
-先確認 `/etc/config/network` 與 `/etc/config/mwan3` 都有同名的 `wan`、`wan2`
-介面。`interface` 填 logical interface 名稱，不要填 `pppoe-wan` 或 `eth1` 這類
-實體 device 名稱。
+先確認 `/etc/config/network` 有 `wan`、`wan2` 等 logical interface。若使用 mwan3
+隔離，再確認 `/etc/config/mwan3` 也有同名介面；未安裝 mwan3 時不需要建立該檔案。
+`interface` 填 logical interface 名稱，不要填 `pppoe-wan` 或 `eth1` 這類實體
+device 名稱。
 
 編輯 `/etc/config/natter`。以下範例同時在 `wan` 建 TCP mapping、在 `wan2` 建
 UDP mapping：
@@ -178,9 +183,11 @@ natterctl firewall
 mwan3 status
 ```
 
-`natterctl probe-all` 會輸出 JSON，適合 LuCI 或其他監控程式使用。每個 WAN 的 DNS
-與 STUN socket 都綁定到對應的 mwan3 interface/device，並使用 mwan3 bypass mark；
-因此探測結果不會被其他 WAN 的負載平衡、failover 或本機代理 fake-IP 代替。
+`natterctl probe-all` 會輸出 JSON，適合 LuCI 或其他監控程式使用。已安裝並啟用
+mwan3 隔離時，每個 WAN 的 DNS 與 STUN socket 都綁定到對應的 mwan3
+interface/device，並使用 mwan3 bypass mark；未安裝 mwan3 時則只使用一般 WAN
+device，不設 mark。兩種模式都不會被其他 WAN 的負載平衡、failover 或本機代理
+fake-IP 代替。
 `natterctl check-config` 也輸出 JSON，逐一回報已啟用 mapping 的 TCP／UDP bind port
 是否可用。啟動失敗時 `natterctl status` 會保留 `status=error` 與具體錯誤，不再只
 消失於 mapping 清單。

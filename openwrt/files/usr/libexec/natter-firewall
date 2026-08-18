@@ -33,6 +33,10 @@ valid_ipv4() {
 	EOF
 }
 
+mwan3_available() {
+	[ -x /etc/init.d/mwan3 ] || [ -x /usr/sbin/mwan3 ]
+}
+
 safe_name() {
 	case "$1" in
 		''|*[!A-Za-z0-9_.:-]*) return 1 ;;
@@ -221,6 +225,10 @@ render_rules() {
 		config_load natter
 		config_get_bool enabled globals enabled 0
 		config_get_bool isolation globals mwan3_isolation 1
+		if [ "$isolation" -eq 1 ] && ! mwan3_available; then
+			log_msg 'mwan3 is not installed; rendering rules without a mwan3 mark'
+			isolation=0
+		fi
 		if [ "$isolation" -eq 1 ]; then
 			PORT_MARK="$(uci -q get mwan3.globals.mmx_mask)"
 			[ -n "$PORT_MARK" ] || PORT_MARK='0x3F00'

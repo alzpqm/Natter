@@ -233,7 +233,7 @@ return view.extend({
 			if (this.probeUpdatedNode)
 				this.probeUpdatedNode.textContent = _('檢查時間：%s').format(formatClockTime());
 			body.appendChild(E('tr', {}, [
-				E('td', { 'colspan': '6' }, _('找不到 mwan3 WAN 介面。'))
+				E('td', { 'colspan': '6' }, _('找不到可用的 WAN 介面。若未安裝 mwan3，請先在映射設定中選取一般 WAN。'))
 			]));
 			return;
 		}
@@ -319,7 +319,7 @@ return view.extend({
 				E('h3', { 'class': 'natter-section-title' }, _('WAN 公網位址')),
 				this.probeUpdatedNode
 			]),
-			E('p', { 'class': 'natter-section-help' }, _('每個 mwan3 WAN 都會透過中國大陸 UDP STUN 個別探測；探測不會新增任何入站防火牆規則。')),
+			E('p', { 'class': 'natter-section-help' }, _('已安裝 mwan3 時會逐一探測其 WAN；未安裝 mwan3 時會探測已啟用映射所使用的 WAN。探測使用中國大陸 UDP STUN，且不會新增任何入站防火牆規則。')),
 				E('div', { 'class': 'natter-table-wrap' }, [
 				E('table', { 'class': 'table natter-responsive-table' }, [
 					E('thead', {}, [ E('tr', {}, [
@@ -507,7 +507,7 @@ return view.extend({
 	},
 
 	load: function() {
-		return Promise.all([ uci.load('mwan3'), this.getRuntime() ]);
+		return Promise.all([ L.resolveDefault(uci.load('mwan3'), null), this.getRuntime() ]);
 	},
 
 	statusLabel: function(state) {
@@ -780,25 +780,26 @@ return view.extend({
 	},
 
 	render: function(data) {
-		var m, s, o;
+		var m, s, o, hasMwan3Wan;
 		var runtime = data[1];
 		var mwanInterfaces = {};
 
 		uci.sections('mwan3', 'interface').forEach(function(section) {
 			mwanInterfaces[section['.name']] = true;
 		});
+		hasMwan3Wan = Object.keys(mwanInterfaces).length > 0;
 
 		m = new form.Map('natter', _('Natter'),
-			_('在指定的 mwan3 WAN 上建立獨立的 TCP 或 UDP 公網映射。公網位址探測使用中國大陸 STUN 端點，並為每個 WAN 個別隔離 DNS。'));
+			_('可在一般 WAN 或 mwan3 WAN 上建立獨立的 TCP 或 UDP 公網映射。安裝 mwan3 時可啟用 WAN 隔離；未安裝 mwan3 也能正常運行。'));
 
 		s = m.section(form.NamedSection, 'globals', 'globals', _('全域設定'));
 		o = s.option(form.Flag, 'enabled', _('啟用 Natter'));
 		o.default = '0';
 
-		o = s.option(form.Flag, 'mwan3_isolation', _('強制使用指定的 mwan3 WAN'));
+		o = s.option(form.Flag, 'mwan3_isolation', _('使用 mwan3 WAN 隔離（可選）'));
 		o.default = '1';
 		o.rmempty = false;
-		o.description = _('將 STUN、Keepalive 與映射 socket 綁定在所選 WAN，避免 mwan3 進行容錯切換或負載平衡。');
+		o.description = _('安裝 mwan3 時將 STUN、Keepalive 與映射 socket 綁定在所選 WAN，避免容錯切換或負載平衡。未安裝 mwan3 時會自動使用一般 WAN 路由。');
 
 		o = s.option(form.Value, 'dns_server', _('中國大陸 DNS 伺服器'));
 		o.default = '119.29.29.29';
@@ -821,9 +822,16 @@ return view.extend({
 		o.rmempty = false;
 		o.retain = true;
 		o.filter = function(sectionId, value) {
+			var isSelectable = mwanInterfaces[value] === true;
 			var configured = this.map.data.get('natter', sectionId, 'interface');
+
+			if (!hasMwan3Wan) {
+				isSelectable = this.networks.some(function(network) {
+					return network.getName() === value && networkL3DeviceName(network) != null;
+				});
+			}
 			return configured === value ||
-				(mwanInterfaces[value] === true &&
+				(isSelectable &&
 				 !isRedundantIpv6Network(this.networks, value));
 		};
 

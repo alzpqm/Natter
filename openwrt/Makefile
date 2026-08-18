@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=13
+PKG_RELEASE:=14
 
 PKG_SOURCE:=Natter-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/MikeWang000000/Natter/tar.gz/$(PKG_VERSION)?
@@ -21,15 +21,16 @@ define Package/natter
   SUBMENU:=Routing and Redirection
   TITLE:=Multi-WAN-safe full-cone NAT port mapping helper
   URL:=https://github.com/MikeWang000000/Natter
-  DEPENDS:=+python3-light +mwan3 +firewall4
+  DEPENDS:=+python3-light +firewall4
   PKGARCH:=all
 endef
 
 define Package/natter/description
 Natter exposes a TCP or UDP port through a full-cone NAT. This OpenWrt
 integration supports independent procd instances per WAN and protocol, applies
-a native device bind and mwan3 bypass mark to DNS, STUN and Natter sockets, and
-installs firewall4 rules for forwarding the fixed inside port to a LAN target.
+a native device bind and (when mwan3 is installed and isolation is enabled) a
+mwan3 bypass mark to DNS, STUN and Natter sockets, and installs firewall4 rules
+for forwarding the fixed inside port to a LAN target.
 endef
 
 define Package/natter/conffiles

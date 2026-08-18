@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-"""Probe the public IPv4 address of every distinct mwan3 WAN."""
+"""Probe each distinct configured WAN, preferring mwan3 interfaces when available."""
 
 import json
 import errno
@@ -219,7 +219,13 @@ def parse_uci_show(config):
     return sections
 
 
+def mwan3_available():
+    return os.path.exists("/etc/init.d/mwan3") or os.path.exists("/usr/sbin/mwan3")
+
+
 def mwan_interfaces():
+    if not mwan3_available():
+        return []
     try:
         result = run(["uci", "-q", "show", "mwan3"], timeout=3)
     except (OSError, subprocess.TimeoutExpired):
@@ -230,6 +236,18 @@ def mwan_interfaces():
         match = re.match(r"^mwan3\.([^.=]+)=interface$", line)
         if match:
             names.append(match.group(1))
+    return names
+
+
+def configured_interfaces():
+    config = parse_uci_show("natter")
+    names = []
+    for options in config.values():
+        if options.get(".type") != "instance" or options.get("enabled") != "1":
+            continue
+        name = options.get("interface", "")
+        if name and name not in names:
+            names.append(name)
     return names
 
 
@@ -259,7 +277,10 @@ def interface_status(name):
 
 
 def distinct_interfaces():
-    statuses = [interface_status(name) for name in mwan_interfaces()]
+    names = mwan_interfaces()
+    if not names:
+        names = configured_interfaces()
+    statuses = [interface_status(name) for name in names]
     by_name = {item["interface"]: item for item in statuses}
     result = []
     seen_devices = set()
@@ -373,12 +394,14 @@ def probe_interface(status, dns_server, mark):
 
 def probe_all():
     dns_server = uci_get("natter.globals.dns_server", DEFAULT_DNS)
-    try:
-        mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
-        if mark <= 0:
-            raise ValueError
-    except ValueError:
-        mark = int(DEFAULT_MARK, 0)
+    mark = 0
+    if mwan3_available():
+        try:
+            mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
+            if mark <= 0:
+                raise ValueError
+        except ValueError:
+            mark = int(DEFAULT_MARK, 0)
 
     results = [
         probe_interface(status, dns_server, mark)
@@ -390,12 +413,14 @@ def probe_all():
 def config_check():
     config = parse_uci_show("natter")
     global_enabled = config.get("globals", {}).get("enabled") == "1"
-    try:
-        mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
-        if mark <= 0:
-            raise ValueError
-    except ValueError:
-        mark = int(DEFAULT_MARK, 0)
+    mark = 0
+    if mwan3_available():
+        try:
+            mark = int(uci_get("mwan3.globals.mmx_mask", DEFAULT_MARK), 0)
+            if mark <= 0:
+                raise ValueError
+        except ValueError:
+            mark = int(DEFAULT_MARK, 0)
 
     configured = []
     for section, options in config.items():
@@ -563,7 +588,7 @@ def resolve_command(arguments):
         raise ValueError("usage: natter-probe resolve DEVICE HOST DNS MARK")
     device, hostname, dns_server, mark_text = arguments
     mark = int(mark_text, 0)
-    if mark <= 0:
+    if mark < 0:
         raise ValueError("invalid socket mark")
     addresses = resolve_host_on_device(device, hostname, dns_server, mark)
     for address in addresses:
