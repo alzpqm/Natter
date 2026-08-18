@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=15
+PKG_RELEASE:=16
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 PATCH_DIR:=$(CURDIR)/luci-app-natter/patches
 

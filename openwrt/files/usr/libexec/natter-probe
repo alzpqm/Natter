@@ -15,6 +15,13 @@ import sys
 
 DEFAULT_DNS = "119.29.29.29"
 DEFAULT_MARK = "0x3F00"
+PROXY_BYPASS_GID = 65534
+RESERVED_PORTS_PATH = os.environ.get(
+    "NATTER_RESERVED_PORTS_PATH", "/proc/sys/net/ipv4/ip_local_reserved_ports"
+)
+RESERVED_PORTS_STATE = os.environ.get(
+    "NATTER_RESERVED_PORTS_STATE", "/var/run/natter/reserved-ports"
+)
 STUN_SERVERS = (
     ("stun.miwifi.com", 3478),
     ("stun.chat.bilibili.com", 3478),
@@ -22,6 +29,20 @@ STUN_SERVERS = (
     ("stun.douyucdn.cn", 18000),
 )
 IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+def apply_proxy_bypass_group():
+    """Use the router-local DIRECT socket group when the caller is privileged."""
+    if not hasattr(os, "setgid") or os.getgid() == PROXY_BYPASS_GID:
+        return
+    try:
+        # OpenClash's router-output rules exempt skgid 65534. UID remains
+        # unchanged, so SO_MARK and SO_BINDTODEVICE keep working as root.
+        os.setgid(PROXY_BYPASS_GID)
+    except OSError:
+        # Non-root/manual callers still get a useful probe; the procd Natter
+        # instances apply the same group independently in the init script.
+        pass
 
 
 def run(command, timeout=5):
@@ -52,6 +73,41 @@ def valid_ipv4(value):
         return all(0 <= int(part) <= 255 for part in value.split("."))
     except ValueError:
         return False
+
+
+def parse_port_set(value):
+    ports = set()
+    for item in (value or "").strip().split(","):
+        item = item.strip()
+        if not item:
+            continue
+        parts = item.split("-", 1)
+        try:
+            first = int(parts[0], 10)
+            last = int(parts[1], 10) if len(parts) == 2 else first
+        except ValueError:
+            raise ValueError("invalid reserved port range: %s" % item) from None
+        if not 1 <= first <= last <= 65535:
+            raise ValueError("invalid reserved port range: %s" % item)
+        ports.update(range(first, last + 1))
+    return ports
+
+
+def format_port_set(ports):
+    values = sorted(set(ports))
+    ranges = []
+    start = previous = None
+    for port in values:
+        if start is None:
+            start = previous = port
+        elif port == previous + 1:
+            previous = port
+        else:
+            ranges.append(str(start) if start == previous else "%s-%s" % (start, previous))
+            start = previous = port
+    if start is not None:
+        ranges.append(str(start) if start == previous else "%s-%s" % (start, previous))
+    return ",".join(ranges)
 
 
 def set_wan_socket_options(sock, device, mark, reuse=False):
@@ -217,6 +273,69 @@ def parse_uci_show(config):
             value = value[1:-1]
         sections.setdefault(section, {})[option] = value
     return sections
+
+
+def configured_bind_ports():
+    config = parse_uci_show("natter")
+    if config.get("globals", {}).get("enabled") != "1":
+        return set()
+
+    ports = set()
+    for options in config.values():
+        if options.get(".type") != "instance" or options.get("enabled") != "1":
+            continue
+        try:
+            port = int(options.get("bind_port", ""), 10)
+        except ValueError:
+            continue
+        if 1 <= port <= 65535:
+            ports.add(port)
+    return ports
+
+
+def read_port_set(path, tolerate_invalid=False):
+    try:
+        with open(path, "r", encoding="ascii") as port_file:
+            return parse_port_set(port_file.read())
+    except FileNotFoundError:
+        return set()
+    except ValueError:
+        if tolerate_invalid:
+            return set()
+        raise
+
+
+def write_managed_port_state(ports):
+    state_dir = os.path.dirname(RESERVED_PORTS_STATE)
+    if state_dir:
+        os.makedirs(state_dir, exist_ok=True)
+    temporary = "%s.%s" % (RESERVED_PORTS_STATE, os.getpid())
+    try:
+        with open(temporary, "w", encoding="ascii") as state_file:
+            state_file.write(format_port_set(ports) + "\n")
+        os.replace(temporary, RESERVED_PORTS_STATE)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def sync_reserved_ports(desired):
+    current = read_port_set(RESERVED_PORTS_PATH)
+    previously_added = read_port_set(RESERVED_PORTS_STATE, tolerate_invalid=True)
+
+    # Preserve reservations that predate Natter.  The state file contains only
+    # the ports Natter itself added, so disabling or reconfiguring Natter never
+    # removes an administrator's existing reservation.
+    external = current - previously_added
+    newly_added = set(desired) - external
+    updated = external | set(desired)
+    if updated != current:
+        with open(RESERVED_PORTS_PATH, "w", encoding="ascii") as port_file:
+            port_file.write(format_port_set(updated) + "\n")
+    write_managed_port_state(newly_added)
+    return updated
 
 
 def mwan3_available():
@@ -624,12 +743,31 @@ def check_port_command(arguments):
     return 0
 
 
+def sync_reserved_ports_command(arguments):
+    if arguments:
+        raise ValueError("usage: natter-probe sync-reserved-ports")
+    print(format_port_set(sync_reserved_ports(configured_bind_ports())))
+    return 0
+
+
+def clear_reserved_ports_command(arguments):
+    if arguments:
+        raise ValueError("usage: natter-probe clear-reserved-ports")
+    print(format_port_set(sync_reserved_ports(set())))
+    return 0
+
+
 if __name__ == "__main__":
     try:
+        apply_proxy_bypass_group()
         if len(sys.argv) > 1 and sys.argv[1] == "resolve":
             sys.exit(resolve_command(sys.argv[2:]))
         if len(sys.argv) > 1 and sys.argv[1] == "check-port":
             sys.exit(check_port_command(sys.argv[2:]))
+        if len(sys.argv) > 1 and sys.argv[1] == "sync-reserved-ports":
+            sys.exit(sync_reserved_ports_command(sys.argv[2:]))
+        if len(sys.argv) > 1 and sys.argv[1] == "clear-reserved-ports":
+            sys.exit(clear_reserved_ports_command(sys.argv[2:]))
         if len(sys.argv) > 1 and sys.argv[1] == "config-check":
             if len(sys.argv) != 2:
                 raise ValueError("usage: natter-probe config-check")
@@ -643,7 +781,8 @@ if __name__ == "__main__":
         if len(sys.argv) > 1:
             raise ValueError(
                 "usage: natter-probe [config-check|runtime-status|"
-                "check-port DEVICE PROTOCOL PORT MARK|"
+                "check-port DEVICE PROTOCOL PORT MARK|sync-reserved-ports|"
+                "clear-reserved-ports|"
                 "resolve DEVICE HOST DNS MARK]"
             )
         probe_all()

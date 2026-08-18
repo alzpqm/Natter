@@ -15,6 +15,12 @@ TCP／UDP Natter 實例，也可用一個設定同時啟動彼此獨立的 TCP +
 - 內建 DNS 查詢使用相同的 WAN device 與該介面的 route mark（未安裝 mwan3 時
   使用一般路由、不設 mark），不呼叫 `mwan3 use`，因此不會被 mwan3 wrapper 的
   舊來源 IP 快取或 `LD_PRELOAD` fd 狀態干擾。
+- Natter 長駐程序與公網探測使用 `nogroup`（GID 65534）建立 socket。OpenClash 的
+  路由器本機輸出規則會把這個群組視為 DIRECT，因此不會把 TCP STUN 重導至本機
+  代理後再由代理重新選擇 WAN；程序仍保留 root UID，以便設定 socket mark 與裝置。
+- 啟動時會把已啟用映射的固定內部埠合併到 Linux
+  `net.ipv4.ip_local_reserved_ports`，避免 Clash 等長駐程式把這些埠隨機選為臨時
+  UDP 來源埠。既有的系統保留值會保留，停用全域 Natter 後會移除由 Natter 新增的值。
 - 啟動前先透過該 WAN 原生 socket 向 `119.29.29.29` 查詢 STUN／keepalive 網域，
   再把 IPv4 數字位址交給 Natter。這可避開本機代理的 fake-IP DNS，也避免 Natter
   程序內再次查 DNS。
@@ -55,7 +61,7 @@ firewall3，尚未納入此整合。
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。最新版目前為
-`openwrt-2.2.1-r15`，Release 同時提供 OpenWrt 25.12 的 APK 與
+`openwrt-2.2.1-r16`，Release 同時提供 OpenWrt 25.12 的 APK 與
 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀對應版本的套件管理指令。
 
 OpenWrt 23.05 以上（APK）：
@@ -187,8 +193,9 @@ mwan3 status
 `natterctl probe-all` 會輸出 JSON，適合 LuCI 或其他監控程式使用。已安裝並啟用
 mwan3 隔離時，每個 WAN 的 DNS 與 UDP STUN socket 都綁定對應 device，TCP STUN／
 keepalive 綁定對應來源 IPv4，並使用該介面的 mwan3 route mark；未安裝 mwan3 時
-則使用一般 WAN 路由。這會避免 Natter 自己觸發其他 WAN 的負載平衡或 failover；
-若另有透明代理攔截 TCP，仍須在代理套件中將 STUN 與 keepalive 設為 DIRECT。
+則使用一般 WAN 路由。程序與探測 socket 另使用 OpenClash 相容的 DIRECT 群組，
+避免路由器本機透明代理取代原連線。若其他代理不支援 GID 65534 bypass，才需另外
+將 STUN 與 keepalive 設為 DIRECT。
 `natterctl check-config` 也輸出 JSON，逐一回報已啟用 mapping 的 TCP／UDP bind port
 是否可用。啟動失敗時 `natterctl status` 會保留 `status=error` 與具體錯誤，不再只
 消失於 mapping 清單。
@@ -218,6 +225,6 @@ ERROR 進入 `daemon.err`，避免把正常的 `Calling script` 訊息誤判成�
 - firewall4 規則只接受指定 WAN device、固定內部埠、目標 IP／埠且帶 DNAT 狀態的封包。
 - 公共 STUN 端點可能停用或改 IP，應保留多個 UDP 端點。TCP 公共大陸端點較少；正式
   環境建議另備一台位於中國大陸、支援 TCP STUN 的 coturn，並加入多個 `stun_server`。
-- 透明代理若強制攔截所有中國大陸 IP，仍需在代理套件中把 STUN、keepalive 與
-  `119.29.29.29:53` 設為 DIRECT。此 package 已先做 WAN 綁定、mwan3 bypass mark 與
-  中國大陸 DNS／STUN 選擇，但不能覆寫未知代理套件的私有攔截規則。
+- OpenClash 若保留標準的 GID 65534 bypass，Natter 會自動走 DIRECT。其他透明代理
+  若忽略 socket 群組並強制攔截所有中國大陸 IP，仍需把 STUN、keepalive 與
+  `119.29.29.29:53` 設為 DIRECT；套件不能覆寫未知代理的私有攔截規則。

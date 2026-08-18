@@ -322,6 +322,13 @@ start_protocol_instance() {
 		procd_append_param command -s "$endpoint"
 	done
 
+	# OpenClash and compatible transparent-proxy rules reserve the unprivileged
+	# nogroup socket GID for router-local DIRECT traffic. Keep UID 0 so Natter
+	# can still apply SO_MARK/SO_BINDTODEVICE, but prevent the proxy from
+	# replacing the selected WAN connection with its own balanced connection.
+	procd_set_param user root
+	procd_set_param group nogroup
+
 	if [ "$isolation" -eq 1 ]; then
 		procd_set_param env NATTER_OPENWRT_LOG=1 NATTER_INSTANCE="$process_name" NATTER_CONFIG_SECTION="$section" \
 			NATTER_INTERFACE="$interface" \
@@ -366,6 +373,9 @@ start_service() {
 	. /lib/functions/network.sh
 	config_load natter
 	config_get_bool enabled globals enabled 0
+	if ! port_error="$("$PROBE_HELPER" sync-reserved-ports 2>&1)"; then
+		log_msg "unable to reserve configured fixed ports: $port_error"
+	fi
 	[ "$enabled" -eq 1 ] || {
 		"$FIREWALL_HELPER" clear
 		return 0
