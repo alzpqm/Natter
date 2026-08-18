@@ -8,12 +8,13 @@ TCP／UDP Natter 實例，也可用一個設定同時啟動彼此獨立的 TCP +
 ## 設計重點
 
 - 每個實例對應一個 OpenWrt logical interface，例如 `wan`、`wan2`。
-- Natter 長駐程序原生設定 `SO_BINDTODEVICE`；安裝 mwan3 且啟用隔離時，會把
-  `mmx_mask` 設為 `SO_MARK` bypass mark，因此固定在指定 L3 device，也不會被
-  mwan3 負載平衡或 failover。
-- 內建 DNS 查詢也直接設定相同的 L3 device 與 bypass mark（未安裝 mwan3 時不設
-  mark），不呼叫 `mwan3 use`，因此不會被 mwan3 wrapper 的舊來源 IP 快取或
-  `LD_PRELOAD` fd 狀態干擾。
+- UDP Natter socket 與內建 DNS 查詢會綁定指定 L3 device；TCP 會綁定該 WAN
+  的來源 IPv4。安裝 mwan3 且啟用隔離時，套件會依 mwan3 的 `mmx_mask` 計算
+  該介面的實際 route mark（不是把遮罩本身誤當成 mark），因此不會被負載平衡
+  或 failover 改送到其他 WAN。
+- 內建 DNS 查詢使用相同的 WAN device 與該介面的 route mark（未安裝 mwan3 時
+  使用一般路由、不設 mark），不呼叫 `mwan3 use`，因此不會被 mwan3 wrapper 的
+  舊來源 IP 快取或 `LD_PRELOAD` fd 狀態干擾。
 - 啟動前先透過該 WAN 原生 socket 向 `119.29.29.29` 查詢 STUN／keepalive 網域，
   再把 IPv4 數字位址交給 Natter。這可避開本機代理的 fake-IP DNS，也避免 Natter
   程序內再次查 DNS。
@@ -54,7 +55,7 @@ firewall3，尚未納入此整合。
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。最新版目前為
-`openwrt-2.2.1-r14`，Release 同時提供 OpenWrt 25.12 的 APK 與
+`openwrt-2.2.1-r15`，Release 同時提供 OpenWrt 25.12 的 APK 與
 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀對應版本的套件管理指令。
 
 OpenWrt 23.05 以上（APK）：
@@ -184,10 +185,10 @@ mwan3 status
 ```
 
 `natterctl probe-all` 會輸出 JSON，適合 LuCI 或其他監控程式使用。已安裝並啟用
-mwan3 隔離時，每個 WAN 的 DNS 與 STUN socket 都綁定到對應的 mwan3
-interface/device，並使用 mwan3 bypass mark；未安裝 mwan3 時則只使用一般 WAN
-device，不設 mark。兩種模式都不會被其他 WAN 的負載平衡、failover 或本機代理
-fake-IP 代替。
+mwan3 隔離時，每個 WAN 的 DNS 與 UDP STUN socket 都綁定對應 device，TCP STUN／
+keepalive 綁定對應來源 IPv4，並使用該介面的 mwan3 route mark；未安裝 mwan3 時
+則使用一般 WAN 路由。這會避免 Natter 自己觸發其他 WAN 的負載平衡或 failover；
+若另有透明代理攔截 TCP，仍須在代理套件中將 STUN 與 keepalive 設為 DIRECT。
 `natterctl check-config` 也輸出 JSON，逐一回報已啟用 mapping 的 TCP／UDP bind port
 是否可用。啟動失敗時 `natterctl status` 會保留 `status=error` 與具體錯誤，不再只
 消失於 mapping 清單。

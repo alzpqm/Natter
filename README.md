@@ -8,22 +8,23 @@ Expose your port behind full-cone NAT to the Internet.
 ## OpenWrt 多 WAN 版本
 
 本 Fork 同時提供可在 OpenWrt 22.03 以上使用的多 WAN 整合套件，支援搭配
-`mwan3`，但不依賴 `mwan3`。已安裝 mwan3 時會將 DNS、STUN、Keepalive 與映射
-socket 綁定到指定 WAN，使用 bypass mark 避免 failover 或負載平衡切換出口；未安裝
+`mwan3`，但不依賴 `mwan3`。已安裝 mwan3 時會將 DNS、UDP STUN 綁定到指定 WAN
+裝置，TCP STUN、Keepalive 與映射 socket 綁定到指定 WAN 來源位址，並使用該介面的
+route mark 避免 failover 或負載平衡切換出口；未安裝
 mwan3 時則使用一般 OpenWrt WAN 路由。
 
 - LuCI 正體中文管理介面，支援 TCP、UDP 與 TCP + UDP 獨立映射
 - 顯示各 WAN 的公網 IPv4、NAT 狀態、埠衝突檢查與執行狀態
 - 手機畫面會將表格改為卡片排列，避免欄位重疊
 - OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
-- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r14)
+- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r15)
 
 Release 內含：
 
-- `natter-2.2.1-r14.apk`
-- `luci-app-natter-2.2.1-r14.apk`
-- `natter_2.2.1-r14_all.ipk`（OpenWrt 22.03）
-- `luci-app-natter_2.2.1-r14_all.ipk`（OpenWrt 22.03）
+- `natter-2.2.1-r15.apk`
+- `luci-app-natter-2.2.1-r15.apk`
+- `natter_2.2.1-r15_all.ipk`（OpenWrt 22.03）
+- `luci-app-natter_2.2.1-r15_all.ipk`（OpenWrt 22.03）
 
 OpenWrt 23.05 以上使用 APK；OpenWrt 22.03 使用舊式 IPK。以下指令會從 Fork
 的最新 Release 取得對應套件。22.03 以前的 firewall3 版本尚未納入，因為本整合

@@ -81,6 +81,31 @@ mwan3_available() {
 	[ -x /etc/init.d/mwan3 ] || [ -x /usr/sbin/mwan3 ]
 }
 
+mwan3_interface_mark() {
+	local interface="$1" mask="$2"
+
+	[ -n "$interface" ] || return 1
+	[ -n "$mask" ] || return 1
+	[ -r /lib/mwan3/common.sh ] || return 1
+	[ -r /lib/mwan3/mwan3.sh ] || return 1
+
+	(
+		. /lib/functions.sh
+		. /lib/functions/network.sh
+		. /lib/mwan3/common.sh
+		. /lib/mwan3/mwan3.sh
+		local id mark
+
+		config_load mwan3
+		mwan3_update_iface_to_table
+		mwan3_get_iface_id id "$interface"
+		[ -n "$id" ] || exit 1
+		mark="$(mwan3_id2mask "$id" "$mask")"
+		[ -n "$mark" ] && [ "$mark" != 0x0 ] || exit 1
+		printf '%s\n' "$mark"
+	)
+}
+
 resolve_endpoint() {
 	local endpoint="$1"
 	local default_port="$2"
@@ -137,10 +162,10 @@ collect_stun_server() {
 
 start_protocol_instance() {
 	local section="$1" protocol="$2" process_name="$3"
-	local enabled interface bind_port target_ip target_port interval
+	local enabled interface bind_ip bind_port target_ip target_port interval
 	local keepalive_server verbose hook_script device isolation mark
 	local default_keepalive resolved_keepalive endpoint dns_server configured_protocol
-	local port_error mark_arg stun_option keepalive_option
+	local port_error mark_arg stun_option keepalive_option bind_arg mwan_mask
 
 	config_get_bool enabled "$section" enabled 0
 	[ "$enabled" -eq 1 ] || return 0
@@ -186,6 +211,11 @@ start_protocol_instance() {
 		log_msg "$section: OpenWrt interface '$interface' has no active L3 device"
 		return 1
 	}
+	network_get_ipaddr bind_ip "$interface"
+	valid_ipv4 "$bind_ip" || {
+		log_msg "$section: OpenWrt interface '$interface' has no active IPv4 address"
+		return 1
+	}
 	valid_ipv4 "$dns_server" || {
 		log_msg "$section: globals.dns_server must be an IPv4 address"
 		return 1
@@ -196,12 +226,18 @@ start_protocol_instance() {
 		return 1
 	fi
 	if [ "$isolation" -eq 1 ]; then
-		mark="$(uci -q get mwan3.globals.mmx_mask)"
-		[ -n "$mark" ] || mark='0x3F00'
-		valid_mark "$mark" || {
+		mwan_mask="$(uci -q get mwan3.globals.mmx_mask)"
+		[ -n "$mwan_mask" ] || mwan_mask='0x3F00'
+		valid_mark "$mwan_mask" || {
 			log_msg "$section: mwan3.globals.mmx_mask is invalid"
 			return 1
 		}
+		mark="$(mwan3_interface_mark "$interface" "$mwan_mask")" || {
+			log_msg "$section: unable to resolve mwan3 socket mark for '$interface'"
+			return 1
+		}
+	else
+		mark='0'
 	fi
 	mark_arg="${mark:--}"
 	if ! port_error="$("$PROBE_HELPER" check-port "$device" "$protocol" \
@@ -269,7 +305,13 @@ start_protocol_instance() {
 
 	procd_append_param command --no-port-test
 	procd_append_param command -m none
-	procd_append_param command -i "$device"
+	# SO_BINDTODEVICE is unreliable for TCP over PPPoE on some OpenWrt
+	# kernels.  The per-interface mwan3 mark selects the route, while the
+	# source address keeps TCP on the requested WAN.  UDP keeps the device
+	# bind because it is supported reliably and avoids cross-WAN replies.
+	bind_arg="$device"
+	[ "$protocol" = tcp ] && bind_arg="$bind_ip"
+	procd_append_param command -i "$bind_arg"
 	procd_append_param command -b "$bind_port"
 	procd_append_param command -k "$interval"
 	procd_append_param command -h "$resolved_keepalive"

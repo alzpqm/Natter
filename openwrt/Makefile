@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=14
+PKG_RELEASE:=15
 
 PKG_SOURCE:=Natter-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/MikeWang000000/Natter/tar.gz/$(PKG_VERSION)?
@@ -27,9 +27,10 @@ endef
 
 define Package/natter/description
 Natter exposes a TCP or UDP port through a full-cone NAT. This OpenWrt
-integration supports independent procd instances per WAN and protocol, applies
-a native device bind and (when mwan3 is installed and isolation is enabled) a
-mwan3 bypass mark to DNS, STUN and Natter sockets, and installs firewall4 rules
+integration supports independent procd instances per WAN and protocol, binds
+UDP sockets to the WAN device and TCP sockets to the WAN source address, and
+(when mwan3 is installed and isolation is enabled) calculates the matching
+mwan3 route mark for DNS, STUN and Natter sockets. It installs firewall4 rules
 for forwarding the fixed inside port to a LAN target.
 endef
 
