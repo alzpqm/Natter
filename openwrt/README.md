@@ -64,7 +64,7 @@ firewall3，尚未納入此整合。
 `openwrt-2.2.1-r16`，Release 同時提供 OpenWrt 25.12 的 APK 與
 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀對應版本的套件管理指令。
 
-OpenWrt 23.05 以上（APK）：
+OpenWrt 25.12 以上（APK）：
 
 ```sh
 rm -f /tmp/natter_openwrt_release /tmp/natter.apk /tmp/luci-app-natter.apk
@@ -78,7 +78,7 @@ luci_url=$(jsonfilter -i /tmp/natter_openwrt_release -e '@.assets[*].browser_dow
 apk add --force-overwrite --clean-protected --allow-untrusted --no-chown /tmp/natter.apk /tmp/luci-app-natter.apk
 ```
 
-OpenWrt 22.03（IPK）：
+OpenWrt 22.03–24.10（IPK）：
 
 ```sh
 rm -f /tmp/natter_openwrt_release /tmp/natter.ipk /tmp/luci-app-natter.ipk

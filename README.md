@@ -28,7 +28,7 @@ Release 內含：
 - `natter_2.2.1-r16_all.ipk`（OpenWrt 22.03）
 - `luci-app-natter_2.2.1-r16_all.ipk`（OpenWrt 22.03）
 
-OpenWrt 23.05 以上使用 APK；OpenWrt 22.03 使用舊式 IPK。以下指令會從 Fork
+OpenWrt 25.12 以上使用 APK；OpenWrt 22.03–24.10 使用舊式 IPK。以下指令會從 Fork
 的最新 Release 取得對應套件。22.03 以前的 firewall3 版本尚未納入，因為本整合
 依賴 firewall4；請不要在 21.02 或更早版本直接安裝這些套件。
 
