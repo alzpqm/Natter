@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=16
+PKG_RELEASE:=17
 
 PKG_SOURCE:=Natter-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/MikeWang000000/Natter/tar.gz/$(PKG_VERSION)?
@@ -62,6 +62,7 @@ define Package/natter/install
 	$(INSTALL_BIN) ./files/usr/libexec/natter-firewall $(1)/usr/libexec/natter-firewall
 	$(INSTALL_BIN) ./files/usr/libexec/natter-notify $(1)/usr/libexec/natter-notify
 	$(INSTALL_BIN) ./files/usr/libexec/natter-probe $(1)/usr/libexec/natter-probe
+	$(INSTALL_BIN) ./files/usr/libexec/natter-interface-trigger $(1)/usr/libexec/natter-interface-trigger
 
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) ./files/usr/sbin/natterctl $(1)/usr/sbin/natterctl

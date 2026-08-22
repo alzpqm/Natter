@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Interface events are also delivered to services that were started manually.
+# Do not let an event restart Natter after its init autostart link was removed.
+/etc/init.d/natter enabled >/dev/null 2>&1 || exit 0
+exec /etc/init.d/natter reload

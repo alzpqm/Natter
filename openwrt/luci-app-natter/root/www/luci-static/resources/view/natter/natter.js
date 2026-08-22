@@ -32,13 +32,19 @@ var BASE_STYLE =
 	'.natter-runtime-table tr.natter-state-waiting>td{background:rgba(220,155,0,.07)}' +
 	'.natter-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:.5em;margin-top:1em}' +
 	'.natter-action-bar .btn{margin:0!important}' +
-	'.natter-status-live{font-weight:600;line-height:1.8}' +
+	'.natter-status-live{display:flex;align-items:baseline;gap:.45em;flex-wrap:wrap;font-weight:600;line-height:1.8}' +
+	'.natter-status-reason{color:var(--text-color-low,#777);font-weight:400}' +
+	'.natter-service-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.45em;margin:.45em 0 .8em}' +
+	'.natter-endpoint{display:inline-block;max-width:100%;padding:.05em .25em;border-radius:3px;background:var(--background-color-low,rgba(127,127,127,.08));font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;direction:ltr;text-align:left;overflow-wrap:anywhere;word-break:break-word}' +
 	'.natter-refresh-time{color:var(--text-color-low,#777);font-size:.9em;white-space:nowrap}' +
 	'.natter-runtime-meta{display:flex;align-items:center;gap:.75em;flex-wrap:wrap}' +
 	'.natter-inline-note{font-size:.9em;color:var(--text-color-low,#777)}';
 var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 	'.natter-panel-head{display:block}' +
 	'.natter-runtime-meta{margin-top:.35em}' +
+	'.natter-status-live{display:block}' +
+	'.natter-status-reason{display:block;margin-top:.25em;line-height:1.5}' +
+	'.natter-service-meta{margin:.45em 0 .65em}' +
 	'.natter-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5em}' +
 	'.natter-summary-card{padding:.6em .7em}' +
 	'.natter-summary-card .natter-summary-value{font-size:1.25em}' +
@@ -50,7 +56,7 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 		'margin:.65em 0;padding:.45em .65em;border:1px solid rgba(127,127,127,.3);' +
 		'border-radius:4px;box-sizing:border-box}' +
 	'.natter-responsive-table tbody>tr>td{display:grid!important;' +
-		'grid-template-columns:minmax(7.5em,38%) minmax(0,1fr);column-gap:.65em;' +
+		'grid-template-columns:minmax(6.25em,34%) minmax(0,1fr);column-gap:.65em;' +
 		'width:100%!important;min-width:0!important;max-width:100%!important;' +
 		'margin:0!important;padding:.35em 0!important;' +
 		'text-align:left!important;overflow-wrap:anywhere;box-sizing:border-box}' +
@@ -62,6 +68,7 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 		'width:100%!important;max-width:100%!important;box-sizing:border-box}' +
 	'.natter-table-wrap{overflow:visible}' +
 	'.natter-table-wrap>table{min-width:0}' +
+	'.natter-action-bar{position:sticky;bottom:0;z-index:3;padding:.6em .4em;background:var(--background-color-high,#fff);box-shadow:0 -1px 6px rgba(0,0,0,.12)}' +
 	'}';
 
 function prepareResponsiveTable(table) {
@@ -191,6 +198,15 @@ function formatClockTime(value) {
 	});
 }
 
+function isTruthyFlag(value) {
+	return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+function endpointNode(value) {
+	value = String(value == null || value === '' ? '—' : value);
+	return value === '—' ? value : E('code', { 'class': 'natter-endpoint' }, value);
+}
+
 return view.extend({
 	getPublicAddresses: function() {
 		return fs.exec('/usr/sbin/natterctl', [ 'probe-all' ]).then(function(result) {
@@ -263,8 +279,8 @@ return view.extend({
 			body.appendChild(E('tr', { 'class': rowClass }, [
 				E('td', { 'data-title': _('WAN') }, String(item.interface || '—')),
 				E('td', { 'data-title': _('L3 裝置') }, String(item.device || '—')),
-				E('td', { 'data-title': _('WAN IPv4 位址') }, String(item.inside_ip || '—')),
-				E('td', { 'data-title': _('公網 IPv4 位址') }, String(item.public_ip || '—')),
+				E('td', { 'data-title': _('WAN IPv4 位址') }, endpointNode(item.inside_ip)),
+				E('td', { 'data-title': _('公網 IPv4 位址') }, endpointNode(item.public_ip)),
 				E('td', { 'data-title': _('NAT') }, nat),
 				E('td', { 'data-title': _('狀態') }, state)
 			]));
@@ -321,7 +337,10 @@ return view.extend({
 			]),
 			E('p', { 'class': 'natter-section-help' }, _('已安裝 mwan3 時會逐一探測其 WAN；未安裝 mwan3 時會探測已啟用映射所使用的 WAN。探測使用中國大陸 UDP STUN，且不會新增任何入站防火牆規則。')),
 				E('div', { 'class': 'natter-table-wrap' }, [
-				E('table', { 'class': 'table natter-responsive-table' }, [
+				E('table', {
+					'class': 'table natter-responsive-table',
+					'aria-label': _('WAN 公網位址清單')
+				}, [
 					E('thead', {}, [ E('tr', {}, [
 						E('th', {}, _('WAN')),
 						E('th', {}, _('L3 裝置')),
@@ -458,7 +477,10 @@ return view.extend({
 			]),
 			E('p', { 'class': 'natter-section-help' }, _('使用與 Natter 相同的裝置綁定、socket mark 與埠共用選項檢查已啟用的映射。發生協定衝突時，不會建立防火牆規則。')),
 			E('div', { 'class': 'natter-table-wrap' }, [
-			E('table', { 'class': 'table natter-responsive-table' }, [
+			E('table', {
+				'class': 'table natter-responsive-table',
+				'aria-label': _('已設定的內部埠清單')
+			}, [
 				E('thead', {}, [ E('tr', {}, [
 					E('th', {}, _('映射')),
 					E('th', {}, _('WAN')),
@@ -522,7 +544,9 @@ return view.extend({
 		return { text: _('未知'), cssClass: 'label warning' };
 	},
 
-	statusReason: function(state) {
+	statusReason: function(state, service) {
+		if (state === STATUS_RUNNING && service && !isTruthyFlag(service.init_enabled))
+			return _('目前有執行中的實例，但未啟用開機自啟。');
 		if (state === STATUS_DISABLED)
 			return _('全域 Natter 開關已停用。');
 		if (state === STATUS_NOT_AUTOSTARTED)
@@ -532,6 +556,33 @@ return view.extend({
 		if (state === STATUS_RUNNING)
 			return _('procd 至少有一個執行中的 Natter 實例。');
 		return _('無法判斷服務狀態。');
+	},
+
+	updateServiceMeta: function(service) {
+		var globalEnabled, initEnabled, node;
+
+		if (!this.serviceMetaNode)
+			return;
+		while (this.serviceMetaNode.firstChild)
+			this.serviceMetaNode.removeChild(this.serviceMetaNode.firstChild);
+
+		if (!service) {
+			this.serviceMetaNode.appendChild(E('span', {
+				'class': 'label warning'
+			}, _('服務詳細狀態無法取得')));
+			return;
+		}
+
+		globalEnabled = isTruthyFlag(service.global_enabled);
+		initEnabled = isTruthyFlag(service.init_enabled);
+		node = E('span', {
+			'class': 'label %s'.format(globalEnabled ? 'success' : 'warning')
+		}, _('全域開關：%s').format(globalEnabled ? _('已啟用') : _('已停用')));
+		this.serviceMetaNode.appendChild(node);
+		node = E('span', {
+			'class': 'label %s'.format(initEnabled ? 'success' : 'warning')
+		}, _('開機自啟：%s').format(initEnabled ? _('已啟用') : _('未啟用')));
+		this.serviceMetaNode.appendChild(node);
 	},
 
 	updateRuntimeTable: function(mappings, error) {
@@ -573,9 +624,9 @@ return view.extend({
 				E('td', { 'data-title': _('實例') }, String(item.instance || item.config || '—')),
 				E('td', { 'data-title': _('WAN') }, String(item.interface || '—')),
 				E('td', { 'data-title': _('協定') }, String(item.protocol || '—').toUpperCase()),
-				E('td', { 'data-title': _('內部端點') }, String(item.mapped_inside || '—')),
-				E('td', { 'data-title': _('公網端點') }, String(item.public || '—')),
-				E('td', { 'data-title': _('轉送目標') }, String(item.target || '—')),
+				E('td', { 'data-title': _('內部端點') }, endpointNode(item.mapped_inside)),
+				E('td', { 'data-title': _('公網端點') }, endpointNode(item.public)),
+				E('td', { 'data-title': _('轉送目標') }, endpointNode(item.target)),
 				E('td', { 'data-title': _('狀態') }, [ state, item.error ? E('div', {
 					'class': 'cbi-value-description'
 				}, String(item.error)) : '' ]),
@@ -600,8 +651,10 @@ return view.extend({
 			: this.statusLabel(this.runtime.state);
 		this.statusNode.className = label.cssClass;
 		this.statusNode.textContent = label.text;
+		this.updateServiceMeta(this.runtime.service);
 		if (this.statusReasonNode)
-			this.statusReasonNode.textContent = this.statusReason(this.runtime.state);
+			this.statusReasonNode.textContent = this.statusReason(this.runtime.state,
+				this.runtime.service);
 		if (this.lastRefreshNode)
 			this.lastRefreshNode.textContent = _('最後更新：%s').format(formatClockTime());
 		this.updateRuntimeSummary(this.runtime.mappings);
@@ -726,7 +779,11 @@ return view.extend({
 		this.buttons = {};
 		this.summaryNodes = {};
 		this.statusNode = E('span');
-		this.statusReasonNode = E('span', { 'class': 'natter-inline-note' });
+		this.statusReasonNode = E('span', { 'class': 'natter-status-reason' });
+		this.serviceMetaNode = E('div', {
+			'class': 'natter-service-meta',
+			'aria-live': 'polite'
+		});
 		this.lastRefreshNode = E('span', {
 			'class': 'natter-refresh-time',
 			'aria-live': 'off'
@@ -746,6 +803,7 @@ return view.extend({
 					this.statusNode, ' ', this.statusReasonNode
 				])
 			]),
+			this.serviceMetaNode,
 			E('div', { 'class': 'natter-summary-grid', 'aria-live': 'polite' }, [
 				this.makeSummaryCard('total', _('映射數'), 'total'),
 				this.makeSummaryCard('mapped', _('已建立映射'), 'mapped'),
@@ -754,7 +812,10 @@ return view.extend({
 			]),
 			E('p', { 'class': 'natter-section-help' }, _('每個協定實例都會列為一列。「映射時間」是最後一次成功 STUN 映射的時間；Keepalive 檢查不會更新此欄位。錯誤會直接顯示在這裡，不必開啟或捲動日誌視窗。')),
 			E('div', { 'class': 'natter-table-wrap' }, [
-			E('table', { 'class': 'table natter-responsive-table natter-runtime-table' }, [
+			E('table', {
+				'class': 'table natter-responsive-table natter-runtime-table',
+				'aria-label': _('Natter 執行映射清單')
+			}, [
 				E('thead', {}, [ E('tr', {}, [
 					E('th', {}, _('實例')),
 					E('th', {}, _('WAN')),

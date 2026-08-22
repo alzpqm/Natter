@@ -52,8 +52,8 @@ PY
 workers=$(ps w | awk "/\\/usr\\/share\\/natter\\/natter.py/ && !/awk/ {count++} END {print count+0}")
 marks=$(for pid in $(ps w | awk "/\\/usr\\/share\\/natter\\/natter.py/ && !/awk/ {print \$1}"); do
     tr "\\000" "\\n" </proc/$pid/environ | sed -n "s/^NATTER_SO_MARK=//p"
-done | awk "\$1 == \"0x3F00\" {ok++} END {print ok+0}")
-echo "WORKERS=$workers MARK_0x3F00=$marks"
+done | awk "NF {ok++} END {print ok+0}")
+echo "WORKERS=$workers MARKED_WORKERS=$marks"
 free -m | sed -n "1,3p"
 df -h / /tmp
 echo "NATTER_RULE_LINES=$(nft list ruleset 2>/dev/null | grep -c "comment \\\"natter:" || true)"

@@ -19,14 +19,14 @@ mwan3 時則使用一般 OpenWrt WAN 路由。
 - 自動保留固定內部埠，避免代理程式的臨時 UDP socket 搶先佔用
 - 手機畫面會將表格改為卡片排列，避免欄位重疊
 - OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
-- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r16)
+- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r17)
 
 Release 內含：
 
-- `natter-2.2.1-r16.apk`
-- `luci-app-natter-2.2.1-r16.apk`
-- `natter_2.2.1-r16_all.ipk`（OpenWrt 22.03）
-- `luci-app-natter_2.2.1-r16_all.ipk`（OpenWrt 22.03）
+- `natter-2.2.1-r17.apk`
+- `luci-app-natter-2.2.1-r17.apk`
+- `natter_2.2.1-r17_all.ipk`（OpenWrt 22.03）
+- `luci-app-natter_2.2.1-r17_all.ipk`（OpenWrt 22.03）
 
 OpenWrt 25.12 以上使用 APK；OpenWrt 22.03–24.10 使用舊式 IPK。以下指令會從 Fork
 的最新 Release 取得對應套件。22.03 以前的 firewall3 版本尚未納入，因為本整合

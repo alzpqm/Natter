@@ -408,7 +408,8 @@ add_interface_trigger() {
 	[ "$enabled" -eq 1 ] || return 0
 	config_get interface "$section" interface
 	[ -n "$interface" ] && \
-		procd_add_interface_trigger "interface.*" "$interface" /etc/init.d/natter reload
+		procd_add_interface_trigger "interface.*" "$interface" \
+			/bin/sh /usr/libexec/natter-interface-trigger
 }
 
 service_triggers() {
