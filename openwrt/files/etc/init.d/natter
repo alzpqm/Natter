@@ -9,10 +9,38 @@ PYTHON="/usr/bin/python3"
 FIREWALL_HELPER="/usr/libexec/natter-firewall"
 NOTIFY_HELPER="/usr/libexec/natter-notify"
 PROBE_HELPER="/usr/libexec/natter-probe"
+UPGRADE_RUNTIME_STATE="/var/run/natter/.package-upgrade-runtime"
+UPGRADE_GUARD="/var/run/natter/.package-upgrade-guard"
 
 log_msg() {
 	logger -t natter -- "$*"
 }
+
+upgrade_guard_active() {
+	local created now
+
+	[ -f "$UPGRADE_GUARD" ] || return 1
+	created="$(sed -n 's/^created_at=//p' "$UPGRADE_GUARD" 2>/dev/null)"
+	case "$created" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	now="$(date +%s 2>/dev/null)"
+	case "$now" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$now" -ge "$created" ] 2>/dev/null || return 1
+	[ "$((now - created))" -le 600 ] 2>/dev/null
+}
+
+# OpenWrt's package maintainer scripts call this init script with `stop` before
+# an upgrade. rc.common's generic stop always calls procd_kill; bypass only
+# that package-managed stop so a manual worker survives until post-upgrade.
+# APK uses the guard written by preinst, while opkg exports PKG_UPGRADE.
+if [ "${action:-}" = stop ] && {
+	[ "${PKG_UPGRADE:-0}" = 1 ] || upgrade_guard_active
+}; then
+	USE_PROCD=
+fi
 
 write_error_state() {
 	local section="$1" process_name="$2" interface="$3" protocol="$4"
@@ -23,6 +51,7 @@ write_error_state() {
 	state_tmp="$(mktemp "/var/run/natter/.${process_name}.XXXXXX")" || return 1
 	{
 		printf 'instance=%s\n' "$process_name"
+		printf 'state_owner=preflight\n'
 		printf 'config=%s\n' "$section"
 		printf 'interface=%s\n' "$interface"
 		printf 'protocol=%s\n' "$protocol"
@@ -297,9 +326,9 @@ start_protocol_instance() {
 		return 0
 	}
 
-	# A respawned instance must not inherit a previous mapping or error result.
-	# The new process will publish a fresh state once STUN succeeds.
-	rm -f "/var/run/natter/${process_name}.state"
+	# Keep a live worker's state across harmless procd re-declarations.  The
+	# state publisher records its worker PID, so runtime-status can reject stale
+	# mappings after a real respawn; stop_service clears state on intentional stop.
 	procd_open_instance "$process_name"
 	procd_set_param command "$PYTHON" "$PROG"
 
@@ -368,7 +397,27 @@ start_instance() {
 }
 
 start_service() {
-	local enabled
+	local enabled upgrade_runtime
+
+	if [ "${PKG_UPGRADE:-0}" = 1 ]; then
+		upgrade_runtime=stopped
+		if [ -f "$UPGRADE_RUNTIME_STATE" ]; then
+			upgrade_runtime="$(cat "$UPGRADE_RUNTIME_STATE" 2>/dev/null)"
+		else
+			# Older opkg transactions may not have written the marker. The
+			# upgrade stop guard keeps a still-running procd service visible.
+			/etc/init.d/natter running >/dev/null 2>&1 && upgrade_runtime=running
+		fi
+		rm -f "$UPGRADE_RUNTIME_STATE" "$UPGRADE_GUARD"
+		if [ "$upgrade_runtime" != running ]; then
+			log_msg 'package upgrade: preserving the previously stopped Natter runtime'
+			return 0
+		fi
+		if ! /etc/init.d/natter enabled >/dev/null 2>&1; then
+			log_msg 'package upgrade: init autostart is disabled; preserving Natter runtime'
+			return 0
+		fi
+	fi
 
 	. /lib/functions/network.sh
 	config_load natter
@@ -391,13 +440,33 @@ start_service() {
 }
 
 stop_service() {
+	if [ "${PKG_UPGRADE:-0}" = 1 ]; then
+		local upgrade_state
+		mkdir -p /var/run/natter
+		upgrade_state="$(mktemp "/var/run/natter/.package-upgrade-runtime.XXXXXX")" || return 0
+		if /etc/init.d/natter running >/dev/null 2>&1; then
+			printf 'running\n' > "$upgrade_state"
+		else
+			printf 'stopped\n' > "$upgrade_state"
+		fi
+		mv -f "$upgrade_state" "$UPGRADE_RUNTIME_STATE"
+		log_msg 'package upgrade: preserving pre-upgrade runtime state'
+		return 0
+	fi
 	"$FIREWALL_HELPER" clear
 	rm -f /var/run/natter/*.state 2>/dev/null
 }
 
 reload_service() {
-	stop
-	start
+	local enabled
+
+	config_load natter
+	config_get_bool enabled globals enabled 0
+	if [ "$enabled" -eq 1 ]; then
+		start_service
+	else
+		stop
+	fi
 }
 
 add_interface_trigger() {
@@ -409,7 +478,7 @@ add_interface_trigger() {
 	config_get interface "$section" interface
 	[ -n "$interface" ] && \
 		procd_add_interface_trigger "interface.*" "$interface" \
-			/bin/sh /usr/libexec/natter-interface-trigger
+			/bin/sh /usr/libexec/natter-interface-trigger "$interface"
 }
 
 service_triggers() {

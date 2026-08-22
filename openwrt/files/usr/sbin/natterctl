@@ -29,8 +29,13 @@ show_service_status() {
 		state=disabled
 		reason='global Natter switch is disabled'
 	elif [ "$procd_running" -eq 1 ]; then
-		state=running
-		reason='procd has at least one running instance'
+		if [ "$init_enabled" -eq 1 ]; then
+			state=running
+			reason='procd has at least one running instance'
+		else
+			state=running-manual
+			reason='procd is running but init service is not enabled at boot'
+		fi
 	elif [ "$init_enabled" -eq 0 ]; then
 		state=not-autostarted
 		reason='init service is not enabled at boot'

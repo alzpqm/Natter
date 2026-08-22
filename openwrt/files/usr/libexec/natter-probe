@@ -11,6 +11,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 
 
 DEFAULT_DNS = "119.29.29.29"
@@ -28,6 +29,7 @@ STUN_SERVERS = (
     ("stun.hitv.com", 3478),
     ("stun.douyucdn.cn", 18000),
 )
+STATE_PUBLISH_TIMEOUT = 90
 IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
 
 
@@ -626,6 +628,80 @@ def config_check():
     print(json.dumps(results, separators=(",", ":")))
 
 
+def process_start_time(pid):
+    """Return a process wall-clock start time from procfs, if available."""
+    try:
+        pid = int(pid)
+        with open("/proc/%d/stat" % pid, "r", encoding="utf-8") as stat_file:
+            stat_text = stat_file.read()
+        fields = stat_text.rsplit(") ", 1)[1].split()
+        start_ticks = int(fields[19], 10)
+        with open("/proc/uptime", "r", encoding="utf-8") as uptime_file:
+            uptime = float(uptime_file.read().split()[0])
+        hz = os.sysconf("SC_CLK_TCK")
+        return time.time() - uptime + start_ticks / float(hz)
+    except (OSError, IndexError, ValueError, TypeError, ZeroDivisionError):
+        return None
+
+
+def state_belongs_to_process(state, process):
+    """Reject a mapping published by an older procd worker epoch."""
+    # Validation failures are emitted before procd can create a worker. Keep
+    # that actionable error visible even when an older worker is still listed
+    # during an in-place reload; it has no process owner by design.
+    if state.get("state_owner") == "preflight":
+        return True
+
+    worker_pid = str(state.get("worker_pid") or "").strip()
+    process_pid = str(process.get("pid") or "").strip()
+    if worker_pid:
+        return bool(process_pid) and worker_pid == process_pid
+
+    # r17 states do not have worker_pid.  Use their timestamp as a best-effort
+    # ownership check so a respawned process cannot inherit a stale successful
+    # mapping.  If procfs is unavailable, preserve the legacy state instead of
+    # manufacturing a false failure.
+    try:
+        updated_at = float(state.get("updated_at") or 0)
+    except (TypeError, ValueError):
+        updated_at = 0
+    started_at = process_start_time(process.get("pid"))
+    if not updated_at or started_at is None:
+        return started_at is None
+    return updated_at + 2 >= started_at
+
+
+def waiting_runtime_state(instance, section, interface, protocol, bind_port,
+                          inside_ip, target_ip, target_port, process):
+    started_at = process_start_time(process.get("pid"))
+    wait_seconds = 0
+    if started_at is not None:
+        wait_seconds = max(0, int(time.time() - started_at))
+    stalled = wait_seconds >= STATE_PUBLISH_TIMEOUT
+    return {
+        "instance": instance,
+        "config": section,
+        "interface": interface,
+        "protocol": protocol,
+        "status": "stalled" if stalled else "starting",
+        "error": (
+            "no STUN mapping state after %ss" % wait_seconds
+            if stalled else "waiting for a STUN mapping response"
+        ),
+        "wait_seconds": wait_seconds,
+        "mapped_inside": (
+            "%s:%s" % (inside_ip, bind_port)
+            if inside_ip and bind_port else "-"
+        ),
+        "public": "-",
+        "target": (
+            "%s:%s" % (target_ip, target_port)
+            if target_ip and target_port else "-"
+        ),
+        "updated_at": "",
+    }
+
+
 def runtime_status():
     by_instance = {}
     for path in sorted(glob.glob("/var/run/natter/*.state")):
@@ -682,35 +758,46 @@ def runtime_status():
         except (ValueError, IndexError):
             pass
 
+        running = bool(process.get("running"))
         current = by_instance.get(instance)
+        section_config = config.get(section, {})
+        inside_ip = interface_status(interface)["inside_ip"] if interface else ""
+        target_ip = section_config.get("target_ip", "")
+        target_port = section_config.get("target_port", "")
+
+        if current is not None and not state_belongs_to_process(current, process):
+            # A state without this worker's PID/timestamp belongs to an older
+            # procd epoch.  Never present its public mapping as current.
+            by_instance.pop(instance, None)
+            current = None
+
         if current is None:
-            section_config = config.get(section, {})
-            inside_ip = interface_status(interface)["inside_ip"] if interface else ""
-            target_ip = section_config.get("target_ip", "")
-            target_port = section_config.get("target_port", "")
-            current = {
-                "instance": instance,
-                "config": section,
-                "interface": interface,
-                "protocol": protocol,
-                "status": "waiting" if process.get("running") else "error",
-                "error": (
-                    "waiting for a STUN mapping response" if process.get("running")
-                    else "mapping process is not running"
-                ),
-                "mapped_inside": (
-                    "%s:%s" % (inside_ip, bind_port)
-                    if inside_ip and bind_port else "-"
-                ),
-                "public": "-",
-                "target": (
-                    "%s:%s" % (target_ip, target_port)
-                    if target_ip and target_port else "-"
-                ),
-                "updated_at": "",
-            }
+            if running:
+                current = waiting_runtime_state(
+                    instance, section, interface, protocol, bind_port,
+                    inside_ip, target_ip, target_port, process
+                )
+            else:
+                current = {
+                    "instance": instance,
+                    "config": section,
+                    "interface": interface,
+                    "protocol": protocol,
+                    "status": "error",
+                    "error": "mapping process is not running",
+                    "mapped_inside": (
+                        "%s:%s" % (inside_ip, bind_port)
+                        if inside_ip and bind_port else "-"
+                    ),
+                    "public": "-",
+                    "target": (
+                        "%s:%s" % (target_ip, target_port)
+                        if target_ip and target_port else "-"
+                    ),
+                    "updated_at": "",
+                }
             by_instance[instance] = current
-        elif not process.get("running") and current.get("status") == "ok":
+        elif not running and current.get("status") != "disabled":
             current["status"] = "error"
             current["error"] = "mapping process is not running"
 

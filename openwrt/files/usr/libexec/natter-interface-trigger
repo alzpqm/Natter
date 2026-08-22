@@ -3,4 +3,45 @@
 # Interface events are also delivered to services that were started manually.
 # Do not let an event restart Natter after its init autostart link was removed.
 /etc/init.d/natter enabled >/dev/null 2>&1 || exit 0
-exec /etc/init.d/natter reload
+
+RUNTIME_DIR=/var/run/natter
+INTERFACE="$1"
+SAFE_INTERFACE="$(printf '%s' "$INTERFACE" | tr -c 'A-Za-z0-9_.-' '_')"
+[ -n "$SAFE_INTERFACE" ] || SAFE_INTERFACE=all
+LOCK_DIR="$RUNTIME_DIR/.interface-trigger-${SAFE_INTERFACE}.lock"
+SNAPSHOT="$RUNTIME_DIR/.interface-${SAFE_INTERFACE}.snapshot"
+TMP_SNAPSHOT=''
+
+mkdir -p "$RUNTIME_DIR"
+mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+cleanup() {
+	[ -z "$TMP_SNAPSHOT" ] || rm -f "$TMP_SNAPSHOT" 2>/dev/null
+	rmdir "$LOCK_DIR" 2>/dev/null
+}
+trap cleanup 0 1 2 15
+
+# procd can coalesce several netifd events poorly, so let the interface settle
+# before taking one snapshot and one reload decision.
+sleep 1
+
+snapshot=''
+if [ -n "$INTERFACE" ]; then
+	status="$(ubus call "network.interface.$INTERFACE" status 2>/dev/null)" || status=''
+	if [ -n "$status" ]; then
+		l3_device="$(printf '%s' "$status" | jsonfilter -q -e '@.l3_device' 2>/dev/null)"
+		ipv4="$(printf '%s' "$status" | jsonfilter -q -e '@.ipv4-address[0].address' 2>/dev/null)"
+		snapshot="${l3_device}|${ipv4}"
+	fi
+fi
+
+if [ -n "$snapshot" ] && [ -f "$SNAPSHOT" ] && [ "$(cat "$SNAPSHOT" 2>/dev/null)" = "$snapshot" ]; then
+	exit 0
+fi
+
+/etc/init.d/natter reload || exit 1
+if [ -n "$snapshot" ]; then
+	TMP_SNAPSHOT="$(mktemp "$RUNTIME_DIR/.interface-${SAFE_INTERFACE}.XXXXXX")" || exit 0
+	printf '%s\n' "$snapshot" > "$TMP_SNAPSHOT"
+	mv -f "$TMP_SNAPSHOT" "$SNAPSHOT"
+	TMP_SNAPSHOT=''
+fi

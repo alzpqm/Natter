@@ -8,10 +8,15 @@
 'require tools.widgets as widgets';
 
 var STATUS_RUNNING = 'running';
+var STATUS_RUNNING_MANUAL = 'running-manual';
 var STATUS_STOPPED = 'stopped';
 var STATUS_DISABLED = 'disabled';
 var STATUS_NOT_AUTOSTARTED = 'not-autostarted';
 var STATUS_UNKNOWN = 'unknown';
+
+function isRunningState(state) {
+	return state === STATUS_RUNNING || state === STATUS_RUNNING_MANUAL;
+}
 var BASE_STYLE =
 	'.natter-page .cbi-section{border-radius:6px;margin-bottom:1.1em}' +
 	'.natter-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1em;flex-wrap:wrap}' +
@@ -30,6 +35,7 @@ var BASE_STYLE =
 	'.natter-summary-card.natter-summary-errors{border-left:4px solid #d33}' +
 	'.natter-runtime-table tr.natter-state-error>td{background:rgba(210,50,50,.08)}' +
 	'.natter-runtime-table tr.natter-state-waiting>td{background:rgba(220,155,0,.07)}' +
+	'.natter-runtime-table tr.natter-state-stalled>td{background:rgba(210,50,50,.08)}' +
 	'.natter-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:.5em;margin-top:1em}' +
 	'.natter-action-bar .btn{margin:0!important}' +
 	'.natter-status-live{display:flex;align-items:baseline;gap:.45em;flex-wrap:wrap;font-weight:600;line-height:1.8}' +
@@ -535,6 +541,8 @@ return view.extend({
 	statusLabel: function(state) {
 		if (state === STATUS_RUNNING)
 			return { text: _('執行中'), cssClass: 'label success' };
+		if (state === STATUS_RUNNING_MANUAL)
+			return { text: _('手動執行中'), cssClass: 'label warning' };
 		if (state === STATUS_DISABLED)
 			return { text: _('已停用'), cssClass: 'label warning' };
 		if (state === STATUS_NOT_AUTOSTARTED)
@@ -545,7 +553,7 @@ return view.extend({
 	},
 
 	statusReason: function(state, service) {
-		if (state === STATUS_RUNNING && service && !isTruthyFlag(service.init_enabled))
+		if (state === STATUS_RUNNING_MANUAL)
 			return _('目前有執行中的實例，但未啟用開機自啟。');
 		if (state === STATUS_DISABLED)
 			return _('全域 Natter 開關已停用。');
@@ -608,17 +616,23 @@ return view.extend({
 		}
 
 		mappings.forEach(function(item) {
-			var state, stateText, rowClass;
+			var state, stateText, rowClass, detail;
 
 			if (item.status === 'ok') {
 				state = E('span', { 'class': 'label success' }, _('已建立映射'));
 				rowClass = 'natter-state-ok';
 			}
 			else {
-				stateText = item.status === 'error' ? _('錯誤') : _('等待中');
+				stateText = item.status === 'error' ? _('錯誤') :
+					item.status === 'stalled' ? _('卡住') :
+					item.status === 'starting' ? _('啟動中') : _('等待中');
 				state = E('span', { 'class': 'label warning' }, stateText);
-				rowClass = item.status === 'error' ? 'natter-state-error' : 'natter-state-waiting';
+				rowClass = item.status === 'error' || item.status === 'stalled'
+					? 'natter-state-error' : 'natter-state-waiting';
 			}
+			detail = item.error ? String(item.error) : '';
+			if (item.status === 'starting' && item.wait_seconds != null)
+				detail = _('%s（已等待 %s 秒）').format(detail, item.wait_seconds);
 
 			body.appendChild(E('tr', { 'class': rowClass }, [
 				E('td', { 'data-title': _('實例') }, String(item.instance || item.config || '—')),
@@ -627,9 +641,9 @@ return view.extend({
 				E('td', { 'data-title': _('內部端點') }, endpointNode(item.mapped_inside)),
 				E('td', { 'data-title': _('公網端點') }, endpointNode(item.public)),
 				E('td', { 'data-title': _('轉送目標') }, endpointNode(item.target)),
-				E('td', { 'data-title': _('狀態') }, [ state, item.error ? E('div', {
+				E('td', { 'data-title': _('狀態') }, [ state, detail ? E('div', {
 					'class': 'cbi-value-description'
-				}, String(item.error)) : '' ]),
+				}, detail) : '' ]),
 				E('td', { 'data-title': _('映射時間') }, formatUpdatedTime(item.updated_at))
 			]));
 		});
@@ -665,11 +679,11 @@ return view.extend({
 			Object.keys(this.buttons).forEach(function(name) {
 				this.buttons[name].setAttribute('aria-busy', this.busy ? 'true' : 'false');
 			}, this);
-			this.buttons.start.disabled = locked || this.runtime.state === STATUS_RUNNING ||
+			this.buttons.start.disabled = locked || isRunningState(this.runtime.state) ||
 				this.runtime.state === STATUS_DISABLED;
-			this.buttons.stop.disabled = locked || this.runtime.state === STATUS_STOPPED ||
+			this.buttons.stop.disabled = locked || !isRunningState(this.runtime.state) ||
 				this.runtime.state === STATUS_DISABLED;
-			this.buttons.restart.disabled = locked || this.runtime.state !== STATUS_RUNNING;
+			this.buttons.restart.disabled = locked || !isRunningState(this.runtime.state);
 			this.buttons.refresh.disabled = this.busy;
 		}
 	},
@@ -700,7 +714,7 @@ return view.extend({
 	serviceCommand: function(action) {
 		var target = action === 'stop'
 			? [ STATUS_STOPPED, STATUS_NOT_AUTOSTARTED, STATUS_DISABLED ]
-			: STATUS_RUNNING;
+			: [ STATUS_RUNNING, STATUS_RUNNING_MANUAL ];
 
 		if (this.busy || this.readonly)
 			return Promise.resolve();
@@ -761,7 +775,7 @@ return view.extend({
 			total++;
 			if (item.status === 'ok')
 				mapped++;
-			else if (item.status === 'error')
+			else if (item.status === 'error' || item.status === 'stalled')
 				errors++;
 			else
 				waiting++;

@@ -27,6 +27,7 @@ mkdir -p /var/run/natter
 state_tmp="$(mktemp "/var/run/natter/.${instance}.XXXXXX")" || exit 1
 {
 	printf 'instance=%s\n' "$instance"
+	printf 'worker_pid=%s\n' "${PPID:-}"
 	printf 'config=%s\n' "$config_section"
 	printf 'interface=%s\n' "$interface"
 	printf 'protocol=%s\n' "$protocol"

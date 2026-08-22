@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=17
+PKG_RELEASE:=19
 
 PKG_SOURCE:=Natter-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/MikeWang000000/Natter/tar.gz/$(PKG_VERSION)?
@@ -34,6 +34,25 @@ mwan3 route mark for DNS, STUN and Natter sockets. Router-local sockets use the
 standard unprivileged group to bypass compatible transparent proxies. It
 reserves configured fixed ports from ephemeral allocation and installs
 firewall4 rules for forwarding the fixed inside port to a LAN target.
+endef
+
+define Package/natter/preinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+[ "$${PKG_UPGRADE:-0}" = "1" ] || exit 0
+
+mkdir -p /var/run/natter
+state_tmp="$$(mktemp /var/run/natter/.package-upgrade-runtime.XXXXXX)" || exit 0
+if /etc/init.d/natter running >/dev/null 2>&1; then
+	printf 'running\n' > "$$state_tmp"
+else
+	printf 'stopped\n' > "$$state_tmp"
+fi
+mv -f "$$state_tmp" /var/run/natter/.package-upgrade-runtime
+guard_tmp="$$(mktemp /var/run/natter/.package-upgrade-guard.XXXXXX)" || exit 0
+printf 'created_at=%s\n' "$$(date +%s)" > "$$guard_tmp"
+mv -f "$$guard_tmp" /var/run/natter/.package-upgrade-guard
+exit 0
 endef
 
 define Package/natter/conffiles
