@@ -414,8 +414,9 @@ start_service() {
 			return 0
 		fi
 		if ! /etc/init.d/natter enabled >/dev/null 2>&1; then
-			log_msg 'package upgrade: init autostart is disabled; preserving Natter runtime'
-			return 0
+			log_msg 'package upgrade: restoring the previously running manual Natter runtime; init autostart remains disabled'
+		else
+			log_msg 'package upgrade: restoring the previously running Natter runtime'
 		fi
 	fi
 

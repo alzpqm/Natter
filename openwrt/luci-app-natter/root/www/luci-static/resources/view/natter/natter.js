@@ -18,24 +18,27 @@ function isRunningState(state) {
 	return state === STATUS_RUNNING || state === STATUS_RUNNING_MANUAL;
 }
 var BASE_STYLE =
-	'.natter-page .cbi-section{border-radius:6px;margin-bottom:1.1em}' +
+	'.natter-page .cbi-section{border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:10px;margin-bottom:1.1em;box-shadow:0 2px 10px rgba(0,0,0,.035)}' +
 	'.natter-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1em;flex-wrap:wrap}' +
-	'.natter-section-title{display:flex;align-items:center;gap:.5em;margin-top:0}' +
+	'.natter-section-title{display:flex;align-items:center;gap:.5em;margin:0}' +
 	'.natter-section-help{color:var(--text-color-low,#777);margin:.35em 0 .8em;line-height:1.5}' +
 	'.natter-section-kicker{margin:-.35em 0 .35em;color:var(--text-color-low,#777);font-size:.75em;font-weight:600;letter-spacing:.08em;text-transform:uppercase}' +
-	'.natter-table-wrap{width:100%;overflow-x:auto;border-radius:4px}' +
+	'.natter-table-wrap{width:100%;overflow-x:auto;border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:8px}' +
 	'.natter-table-wrap>table{margin:0;min-width:760px}' +
+	'.natter-runtime-table thead th{position:sticky;top:0;z-index:1;background:var(--background-color-high,#fff);white-space:nowrap}' +
 	'.natter-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65em;margin:.8em 0 1em}' +
-	'.natter-summary-card{min-width:0;padding:.75em .85em;border:1px solid var(--border-color-medium,rgba(127,127,127,.28));border-radius:6px;background:var(--background-color-low,rgba(127,127,127,.06))}' +
+	'.natter-summary-card{min-width:0;padding:.8em .9em;border:1px solid var(--border-color-medium,rgba(127,127,127,.28));border-radius:8px;background:var(--background-color-low,rgba(127,127,127,.06))}' +
 	'.natter-summary-card .natter-summary-label{display:block;color:var(--text-color-low,#777);font-size:.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-	'.natter-summary-card .natter-summary-value{display:block;margin-top:.2em;font-size:1.45em;line-height:1.15}' +
+	'.natter-summary-card .natter-summary-value{display:block;margin-top:.25em;font-size:1.5em;line-height:1.15;font-variant-numeric:tabular-nums}' +
 	'.natter-summary-card.natter-summary-total{border-left:4px solid var(--text-color-medium,#888)}' +
 	'.natter-summary-card.natter-summary-mapped{border-left:4px solid #2e9f45}' +
 	'.natter-summary-card.natter-summary-waiting{border-left:4px solid #d99000}' +
 	'.natter-summary-card.natter-summary-errors{border-left:4px solid #d33}' +
+	'.natter-runtime-table tr.natter-state-ok>td{background:rgba(46,159,69,.035)}' +
 	'.natter-runtime-table tr.natter-state-error>td{background:rgba(210,50,50,.08)}' +
 	'.natter-runtime-table tr.natter-state-waiting>td{background:rgba(220,155,0,.07)}' +
 	'.natter-runtime-table tr.natter-state-stalled>td{background:rgba(210,50,50,.08)}' +
+	'.natter-label-danger{background:#c93232!important;color:#fff!important}' +
 	'.natter-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:.5em;margin-top:1em}' +
 	'.natter-action-bar .btn{margin:0!important}' +
 	'.natter-status-live{display:flex;align-items:baseline;gap:.45em;flex-wrap:wrap;font-weight:600;line-height:1.8}' +
@@ -59,8 +62,8 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 	'.natter-responsive-table thead{display:none!important}' +
 	'.natter-responsive-table tbody{display:block!important;width:100%!important}' +
 	'.natter-responsive-table tbody>tr{display:block!important;width:100%!important;' +
-		'margin:.65em 0;padding:.45em .65em;border:1px solid rgba(127,127,127,.3);' +
-		'border-radius:4px;box-sizing:border-box}' +
+		'margin:.65em 0;padding:.5em .7em;border:1px solid rgba(127,127,127,.3);' +
+		'border-radius:8px;box-sizing:border-box;box-shadow:0 1px 5px rgba(0,0,0,.04)}' +
 	'.natter-responsive-table tbody>tr>td{display:grid!important;' +
 		'grid-template-columns:minmax(6.25em,34%) minmax(0,1fr);column-gap:.65em;' +
 		'width:100%!important;min-width:0!important;max-width:100%!important;' +
@@ -72,9 +75,13 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 	'.natter-responsive-table tbody>tr>td[colspan]:before{display:none}' +
 	'.natter-responsive-table input,.natter-responsive-table select{' +
 		'width:100%!important;max-width:100%!important;box-sizing:border-box}' +
-	'.natter-table-wrap{overflow:visible}' +
+	'.natter-runtime-table thead th{position:static}' +
+	'.natter-table-wrap{overflow:visible;border:0}' +
 	'.natter-table-wrap>table{min-width:0}' +
 	'.natter-action-bar{position:sticky;bottom:0;z-index:3;padding:.6em .4em;background:var(--background-color-high,#fff);box-shadow:0 -1px 6px rgba(0,0,0,.12)}' +
+	'}' +
+	'@media screen and (max-width:420px){' +
+	'.natter-action-bar .btn{flex-basis:100%;min-width:0}' +
 	'}';
 
 function prepareResponsiveTable(table) {
@@ -211,6 +218,24 @@ function isTruthyFlag(value) {
 function endpointNode(value) {
 	value = String(value == null || value === '' ? '—' : value);
 	return value === '—' ? value : E('code', { 'class': 'natter-endpoint' }, value);
+}
+
+function runtimeDetail(item) {
+	var detail = String(item && item.error || '');
+	var stalled;
+
+	if (detail === 'waiting for a STUN mapping response')
+		return item.wait_seconds != null
+			? _('正在等待 STUN 回應（已等待 %s 秒）').format(item.wait_seconds)
+			: _('正在等待 STUN 回應。');
+	if (detail === 'mapping process is not running')
+		return _('映射程序未執行。');
+	stalled = detail.match(/^no STUN mapping state after ([0-9]+)s$/);
+	if (stalled)
+		return _('超過 %s 秒仍未取得 STUN 映射；請檢查 WAN、STUN 伺服器與代理繞過設定。')
+			.format(stalled[1]);
+
+	return detail;
 }
 
 return view.extend({
@@ -626,13 +651,14 @@ return view.extend({
 				stateText = item.status === 'error' ? _('錯誤') :
 					item.status === 'stalled' ? _('卡住') :
 					item.status === 'starting' ? _('啟動中') : _('等待中');
-				state = E('span', { 'class': 'label warning' }, stateText);
+				state = E('span', {
+					'class': item.status === 'error' || item.status === 'stalled'
+						? 'label natter-label-danger' : 'label warning'
+				}, stateText);
 				rowClass = item.status === 'error' || item.status === 'stalled'
 					? 'natter-state-error' : 'natter-state-waiting';
 			}
-			detail = item.error ? String(item.error) : '';
-			if (item.status === 'starting' && item.wait_seconds != null)
-				detail = _('%s（已等待 %s 秒）').format(detail, item.wait_seconds);
+			detail = runtimeDetail(item);
 
 			body.appendChild(E('tr', { 'class': rowClass }, [
 				E('td', { 'data-title': _('實例') }, String(item.instance || item.config || '—')),
