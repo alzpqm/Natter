@@ -18,24 +18,31 @@ show_status() {
 }
 
 show_service_status() {
-	local global_enabled=0 init_enabled=0 procd_running=0 state reason
+	global_enabled=0
+	init_enabled=0
+	procd_running=0
+	state=''
+	reason=''
 
 	[ "$(uci -q get natter.globals.enabled 2>/dev/null)" = 1 ] && \
 		global_enabled=1
 	/etc/init.d/natter enabled >/dev/null 2>&1 && init_enabled=1
 	/etc/init.d/natter running >/dev/null 2>&1 && procd_running=1
 
-	if [ "$global_enabled" -eq 0 ]; then
-		state=disabled
-		reason='global Natter switch is disabled'
-	elif [ "$procd_running" -eq 1 ]; then
-		if [ "$init_enabled" -eq 1 ]; then
+	if [ "$procd_running" -eq 1 ]; then
+		if [ "$global_enabled" -eq 0 ]; then
+			state=running-disabled
+			reason='procd is still running while the global Natter switch is disabled'
+		elif [ "$init_enabled" -eq 1 ]; then
 			state=running
 			reason='procd has at least one running instance'
 		else
 			state=running-manual
 			reason='procd is running but init service is not enabled at boot'
 		fi
+	elif [ "$global_enabled" -eq 0 ]; then
+		state=disabled
+		reason='global Natter switch is disabled'
 	elif [ "$init_enabled" -eq 0 ]; then
 		state=not-autostarted
 		reason='init service is not enabled at boot'

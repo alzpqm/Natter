@@ -9,13 +9,15 @@
 
 var STATUS_RUNNING = 'running';
 var STATUS_RUNNING_MANUAL = 'running-manual';
+var STATUS_RUNNING_DISABLED = 'running-disabled';
 var STATUS_STOPPED = 'stopped';
 var STATUS_DISABLED = 'disabled';
 var STATUS_NOT_AUTOSTARTED = 'not-autostarted';
 var STATUS_UNKNOWN = 'unknown';
 
 function isRunningState(state) {
-	return state === STATUS_RUNNING || state === STATUS_RUNNING_MANUAL;
+	return state === STATUS_RUNNING || state === STATUS_RUNNING_MANUAL ||
+		state === STATUS_RUNNING_DISABLED;
 }
 var BASE_STYLE =
 	'.natter-page .cbi-section{border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:10px;margin-bottom:1.1em;box-shadow:0 2px 10px rgba(0,0,0,.035)}' +
@@ -28,6 +30,10 @@ var BASE_STYLE =
 	'.natter-runtime-table thead th{position:sticky;top:0;z-index:1;background:var(--background-color-high,#fff);white-space:nowrap}' +
 	'.natter-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65em;margin:.8em 0 1em}' +
 	'.natter-summary-card{min-width:0;padding:.8em .9em;border:1px solid var(--border-color-medium,rgba(127,127,127,.28));border-radius:8px;background:var(--background-color-low,rgba(127,127,127,.06))}' +
+	'button.natter-summary-card{width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;appearance:none}' +
+	'button.natter-summary-card:hover{border-color:var(--text-color-medium,#888)}' +
+	'button.natter-summary-card:focus-visible{outline:2px solid var(--primary-color,#3478c5);outline-offset:2px}' +
+	'button.natter-summary-card[aria-pressed="true"]{box-shadow:0 0 0 2px var(--primary-color,#3478c5);background:var(--background-color-high,#fff)}' +
 	'.natter-summary-card .natter-summary-label{display:block;color:var(--text-color-low,#777);font-size:.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
 	'.natter-summary-card .natter-summary-value{display:block;margin-top:.25em;font-size:1.5em;line-height:1.15;font-variant-numeric:tabular-nums}' +
 	'.natter-summary-card.natter-summary-total{border-left:4px solid var(--text-color-medium,#888)}' +
@@ -78,10 +84,11 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 	'.natter-runtime-table thead th{position:static}' +
 	'.natter-table-wrap{overflow:visible;border:0}' +
 	'.natter-table-wrap>table{min-width:0}' +
-	'.natter-action-bar{position:sticky;bottom:0;z-index:3;padding:.6em .4em;background:var(--background-color-high,#fff);box-shadow:0 -1px 6px rgba(0,0,0,.12)}' +
+	'.natter-runtime-actions{position:sticky;bottom:0;z-index:3;padding:.6em .4em;padding-bottom:max(.6em,env(safe-area-inset-bottom));background:var(--background-color-high,#fff);box-shadow:0 -1px 6px rgba(0,0,0,.12)}' +
 	'}' +
 	'@media screen and (max-width:420px){' +
 	'.natter-action-bar .btn{flex-basis:100%;min-width:0}' +
+	'.natter-runtime-actions .btn{flex-basis:calc(50% - .5em)}' +
 	'}';
 
 function prepareResponsiveTable(table) {
@@ -236,6 +243,16 @@ function runtimeDetail(item) {
 			.format(stalled[1]);
 
 	return detail;
+}
+
+function runtimeMatchesFilter(item, filter) {
+	if (filter === 'mapped')
+		return item.status === 'ok';
+	if (filter === 'errors')
+		return item.status === 'error' || item.status === 'stalled';
+	if (filter === 'waiting')
+		return item.status !== 'ok' && item.status !== 'error' && item.status !== 'stalled';
+	return true;
 }
 
 return view.extend({
@@ -568,6 +585,8 @@ return view.extend({
 			return { text: _('執行中'), cssClass: 'label success' };
 		if (state === STATUS_RUNNING_MANUAL)
 			return { text: _('手動執行中'), cssClass: 'label warning' };
+		if (state === STATUS_RUNNING_DISABLED)
+			return { text: _('仍在執行（全域已停用）'), cssClass: 'label natter-label-danger' };
 		if (state === STATUS_DISABLED)
 			return { text: _('已停用'), cssClass: 'label warning' };
 		if (state === STATUS_NOT_AUTOSTARTED)
@@ -580,6 +599,8 @@ return view.extend({
 	statusReason: function(state, service) {
 		if (state === STATUS_RUNNING_MANUAL)
 			return _('目前有執行中的實例，但未啟用開機自啟。');
+		if (state === STATUS_RUNNING_DISABLED)
+			return _('全域開關已停用，但 procd 實例仍在執行；請停止服務或重新套用設定。');
 		if (state === STATUS_DISABLED)
 			return _('全域 Natter 開關已停用。');
 		if (state === STATUS_NOT_AUTOSTARTED)
@@ -619,7 +640,7 @@ return view.extend({
 	},
 
 	updateRuntimeTable: function(mappings, error) {
-		var body = this.runtimeTableBody;
+		var body = this.runtimeTableBody, visibleMappings;
 
 		if (!body)
 			return;
@@ -639,8 +660,17 @@ return view.extend({
 			]));
 			return;
 		}
+		visibleMappings = mappings.filter(function(item) {
+			return runtimeMatchesFilter(item, this.runtimeFilter);
+		}, this);
+		if (!visibleMappings.length) {
+			body.appendChild(E('tr', {}, [
+				E('td', { 'colspan': '8' }, _('目前篩選條件沒有符合的映射。'))
+			]));
+			return;
+		}
 
-		mappings.forEach(function(item) {
+		visibleMappings.forEach(function(item) {
 			var state, stateText, rowClass, detail;
 
 			if (item.status === 'ok') {
@@ -709,7 +739,8 @@ return view.extend({
 				this.runtime.state === STATUS_DISABLED;
 			this.buttons.stop.disabled = locked || !isRunningState(this.runtime.state) ||
 				this.runtime.state === STATUS_DISABLED;
-			this.buttons.restart.disabled = locked || !isRunningState(this.runtime.state);
+			this.buttons.restart.disabled = locked || !isRunningState(this.runtime.state) ||
+				this.runtime.state === STATUS_RUNNING_DISABLED;
 			this.buttons.refresh.disabled = this.busy;
 		}
 	},
@@ -785,13 +816,34 @@ return view.extend({
 
 	makeSummaryCard: function(key, label, cssClass) {
 		var value = E('strong', { 'class': 'natter-summary-value' }, '—');
+		var card;
 
 		this.summaryNodes[key] = value;
-		return E('div', {
-			'class': 'natter-summary-card natter-summary-%s'.format(cssClass || key)
+		card = E('button', {
+			'type': 'button',
+			'class': 'natter-summary-card natter-summary-%s'.format(cssClass || key),
+			'aria-pressed': this.runtimeFilter === key ? 'true' : 'false',
+			'aria-controls': 'natter-runtime-table',
+			'click': L.bind(function(ev) {
+				ev.preventDefault();
+				this.setRuntimeFilter(key);
+			}, this)
 		}, [
 			E('span', { 'class': 'natter-summary-label' }, label), value
 		]);
+		this.summaryCards[key] = card;
+		return card;
+	},
+
+	setRuntimeFilter: function(filter) {
+		if ([ 'total', 'mapped', 'waiting', 'errors' ].indexOf(filter) === -1)
+			filter = 'total';
+		this.runtimeFilter = filter;
+		Object.keys(this.summaryCards || {}).forEach(function(key) {
+			this.summaryCards[key].setAttribute('aria-pressed', key === filter ? 'true' : 'false');
+		}, this);
+		if (this.runtime)
+			this.updateRuntimeTable(this.runtime.mappings, this.runtime.mappingError);
 	},
 
 	updateRuntimeSummary: function(mappings) {
@@ -818,6 +870,8 @@ return view.extend({
 	renderStatus: function(runtime) {
 		this.buttons = {};
 		this.summaryNodes = {};
+		this.summaryCards = {};
+		this.runtimeFilter = this.runtimeFilter || 'total';
 		this.statusNode = E('span');
 		this.statusReasonNode = E('span', { 'class': 'natter-status-reason' });
 		this.serviceMetaNode = E('div', {
@@ -850,9 +904,10 @@ return view.extend({
 				this.makeSummaryCard('waiting', _('等待中'), 'waiting'),
 				this.makeSummaryCard('errors', _('錯誤'), 'errors')
 			]),
-			E('p', { 'class': 'natter-section-help' }, _('每個協定實例都會列為一列。「映射時間」是最後一次成功 STUN 映射的時間；Keepalive 檢查不會更新此欄位。錯誤會直接顯示在這裡，不必開啟或捲動日誌視窗。')),
+			E('p', { 'class': 'natter-section-help' }, _('點選摘要卡可篩選下方清單。每個協定實例都會列為一列；「映射時間」是最後一次成功 STUN 映射的時間，Keepalive 檢查不會更新此欄位。錯誤會直接顯示在這裡，不必開啟或捲動日誌視窗。')),
 			E('div', { 'class': 'natter-table-wrap' }, [
 			E('table', {
+				'id': 'natter-runtime-table',
 				'class': 'table natter-responsive-table natter-runtime-table',
 				'aria-label': _('Natter 執行映射清單')
 			}, [
@@ -868,7 +923,7 @@ return view.extend({
 				]) ]),
 				this.runtimeTableBody
 			]) ]),
-			E('div', { 'class': 'cbi-page-actions natter-action-bar' }, [
+			E('div', { 'class': 'cbi-page-actions natter-action-bar natter-runtime-actions' }, [
 				this.makeButton('start', _('啟動'), 'cbi-button-positive'), ' ',
 				this.makeButton('restart', _('重新啟動'), 'cbi-button-apply'), ' ',
 				this.makeButton('stop', _('停止'), 'cbi-button-negative'), ' ',

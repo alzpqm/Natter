@@ -1,8 +1,11 @@
 #!/bin/sh
 
-# Interface events are also delivered to services that were started manually.
-# Do not let an event restart Natter after its init autostart link was removed.
-/etc/init.d/natter enabled >/dev/null 2>&1 || exit 0
+# Keep following WAN changes while a manually started runtime is active, but do
+# not let an interface event revive a service that is both disabled and stopped.
+if ! /etc/init.d/natter enabled >/dev/null 2>&1 && \
+	! /etc/init.d/natter running >/dev/null 2>&1; then
+	exit 0
+fi
 
 RUNTIME_DIR=/var/run/natter
 INTERFACE="$1"
@@ -13,9 +16,27 @@ SNAPSHOT="$RUNTIME_DIR/.interface-${SAFE_INTERFACE}.snapshot"
 TMP_SNAPSHOT=''
 
 mkdir -p "$RUNTIME_DIR"
-mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+acquire_lock() {
+	if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+		lock_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+		case "$lock_pid" in
+			''|*[!0-9]*) ;;
+			*) kill -0 "$lock_pid" 2>/dev/null && return 1 ;;
+		esac
+		rm -f "$LOCK_DIR/pid" 2>/dev/null || return 1
+		rmdir "$LOCK_DIR" 2>/dev/null || return 1
+		mkdir "$LOCK_DIR" 2>/dev/null || return 1
+	fi
+	if ! printf '%s\n' "$$" > "$LOCK_DIR/pid"; then
+		rm -f "$LOCK_DIR/pid" 2>/dev/null
+		rmdir "$LOCK_DIR" 2>/dev/null
+		return 1
+	fi
+}
+acquire_lock || exit 0
 cleanup() {
 	[ -z "$TMP_SNAPSHOT" ] || rm -f "$TMP_SNAPSHOT" 2>/dev/null
+	rm -f "$LOCK_DIR/pid" 2>/dev/null
 	rmdir "$LOCK_DIR" 2>/dev/null
 }
 trap cleanup 0 1 2 15
@@ -24,7 +45,7 @@ trap cleanup 0 1 2 15
 # before taking one snapshot and one reload decision.
 sleep 1
 
-snapshot=''
+snapshot='unavailable|'
 if [ -n "$INTERFACE" ]; then
 	status="$(ubus call "network.interface.$INTERFACE" status 2>/dev/null)" || status=''
 	if [ -n "$status" ]; then
@@ -34,14 +55,12 @@ if [ -n "$INTERFACE" ]; then
 	fi
 fi
 
-if [ -n "$snapshot" ] && [ -f "$SNAPSHOT" ] && [ "$(cat "$SNAPSHOT" 2>/dev/null)" = "$snapshot" ]; then
+if [ -f "$SNAPSHOT" ] && [ "$(cat "$SNAPSHOT" 2>/dev/null)" = "$snapshot" ]; then
 	exit 0
 fi
 
 /etc/init.d/natter reload || exit 1
-if [ -n "$snapshot" ]; then
-	TMP_SNAPSHOT="$(mktemp "$RUNTIME_DIR/.interface-${SAFE_INTERFACE}.XXXXXX")" || exit 0
-	printf '%s\n' "$snapshot" > "$TMP_SNAPSHOT"
-	mv -f "$TMP_SNAPSHOT" "$SNAPSHOT"
-	TMP_SNAPSHOT=''
-fi
+TMP_SNAPSHOT="$(mktemp "$RUNTIME_DIR/.interface-${SAFE_INTERFACE}.XXXXXX")" || exit 1
+printf '%s\n' "$snapshot" > "$TMP_SNAPSHOT" || exit 1
+mv -f "$TMP_SNAPSHOT" "$SNAPSHOT" || exit 1
+TMP_SNAPSHOT=''

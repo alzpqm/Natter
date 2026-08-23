@@ -2,14 +2,14 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=natter
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=20
+PKG_RELEASE:=21
 
 PKG_SOURCE:=Natter-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/MikeWang000000/Natter/tar.gz/$(PKG_VERSION)?
 PKG_HASH:=c16ab2c446a821655d5d784980024a8cadf73fbcb7e9c503665e4ecf83703828
 PKG_BUILD_DIR:=$(BUILD_DIR)/Natter-$(PKG_VERSION)
 
-PKG_MAINTAINER:=OpenWrt Natter package maintainers
+PKG_MAINTAINER:=alzpqm
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
 

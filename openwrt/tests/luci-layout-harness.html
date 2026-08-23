@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Natter LuCI layout harness</title>
+	<style>
+		:root{--border-color-medium:#d8dee8;--background-color-high:#fff;--background-color-low:#f5f7fa;--text-color-low:#657084;--text-color-medium:#657084}
+		*{box-sizing:border-box} body{margin:0;background:#eef1f5;color:#20242b;font:15px/1.45 system-ui,-apple-system,sans-serif}
+		main{max-width:1180px;margin:auto;padding:18px}.cbi-section{background:#fff;padding:16px}.cbi-value{display:flex;gap:1em;margin:.65em 0}.cbi-value-title{flex:0 0 9em;font-weight:600}.cbi-value-field{min-width:0}
+		table{width:100%;border-collapse:collapse}th,td{padding:.55em .65em;border-bottom:1px solid #e6e9ef;text-align:left;vertical-align:top}.label{display:inline-block;padding:.14em .55em;border-radius:999px;background:#e4a500;color:#fff;font-size:.86em}.label.success{background:#2e9f45}.btn{border:0;border-radius:6px;padding:.55em .85em;background:#e6eaf0;color:#20242b}.cbi-button-positive{background:#2e9f45;color:#fff}.cbi-button-negative{background:#c93232;color:#fff}.cbi-button-apply{background:#3478c5;color:#fff}.cbi-value-description{margin-top:.3em;color:#657084;font-size:.9em}
+		@media(max-width:700px){main{padding:8px}.cbi-section{padding:11px}.cbi-value{display:block}.cbi-value-title{display:block;margin-bottom:.25em}}
+	</style>
+	<style id="natter-source-style"></style>
+</head>
+<body>
+<main class="natter-page">
+	<section class="cbi-section" id="runtime-panel">
+		<div class="natter-panel-head"><h3 class="natter-section-title">執行狀態</h3><span class="natter-refresh-time">最後更新：21:08:35</span></div>
+		<div class="cbi-value"><label class="cbi-value-title">服務</label><div class="cbi-value-field natter-status-live"><span class="label success">執行中</span><span class="natter-status-reason">procd 至少有一個執行中的 Natter 實例。</span></div></div>
+		<div class="natter-service-meta"><span class="label success">全域開關：已啟用</span><span class="label success">開機自啟：已啟用</span></div>
+		<div class="natter-summary-grid"><div class="natter-summary-card natter-summary-total"><span class="natter-summary-label">映射數</span><strong class="natter-summary-value">16</strong></div><div class="natter-summary-card natter-summary-mapped"><span class="natter-summary-label">已建立映射</span><strong class="natter-summary-value">13</strong></div><div class="natter-summary-card natter-summary-waiting"><span class="natter-summary-label">等待中</span><strong class="natter-summary-value">2</strong></div><div class="natter-summary-card natter-summary-errors"><span class="natter-summary-label">錯誤</span><strong class="natter-summary-value">1</strong></div></div>
+		<p class="natter-section-help">每個協定實例都會列為一列。長時間執行與錯誤內容會直接顯示在這裡。</p>
+		<div class="natter-table-wrap"><table class="table natter-responsive-table natter-runtime-table"><thead><tr><th>實例</th><th>WAN</th><th>協定</th><th>內部端點</th><th>公網端點</th><th>轉送目標</th><th>狀態</th><th>映射時間</th></tr></thead><tbody id="runtime-body"></tbody></table></div>
+		<div class="cbi-page-actions natter-action-bar" id="runtime-actions"><button class="btn cbi-button-positive">啟動</button><button class="btn cbi-button-apply">重新啟動</button><button class="btn cbi-button-negative">停止</button><button class="btn">重新整理</button></div>
+	</section>
+	<section class="cbi-section"><div class="natter-panel-head"><h3>WAN 公網位址</h3><span class="natter-refresh-time">檢查時間：21:08:36</span></div><p class="natter-section-help">探測使用中國大陸 UDP STUN。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">探測所有 WAN</button></div></section>
+	<section class="cbi-section"><div class="natter-panel-head"><h3>已設定的內部埠</h3><span class="natter-refresh-time">檢查時間：21:08:37</span></div><p class="natter-section-help">檢查已啟用的映射。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">檢查內部埠</button></div></section>
+</main>
+<script>
+	function endpoint(text){return '<code class="natter-endpoint">'+text+'</code>'}
+	var body=document.getElementById('runtime-body');
+	for(var i=0;i<16;i++){
+		var failed=i===7,waiting=i===12||i===13;
+		var row=document.createElement('tr'); row.className=failed?'natter-state-error':waiting?'natter-state-waiting':'natter-state-ok';
+		var values=['http_luci_public_mapping_'+(i+1),['wanct','wancm','wan2'][i%3],i%2?'UDP':'TCP',endpoint('192.0.2.'+(10+i)+':'+(30000+i)),failed?'—':endpoint('203.0.113.'+(30+i)+':'+(42000+i)),endpoint('192.168.9.'+(20+i)+':80'),failed?'<span class="label natter-label-danger">錯誤</span><div class="cbi-value-description">STUN 伺服器持續無回應；這是一段用來驗證手機換行與卡片高度的較長錯誤說明。</div>':waiting?'<span class="label">啟動中</span><div class="cbi-value-description">正在等待 STUN 回應（已等待 88 秒）</div>':'<span class="label success">已建立映射</span>','08/24 21:'+(10+i)+':05'];
+		['實例','WAN','協定','內部端點','公網端點','轉送目標','狀態','映射時間'].forEach(function(title,index){var cell=document.createElement('td');cell.dataset.title=title;cell.innerHTML=values[index];row.appendChild(cell)}); body.appendChild(row);
+	}
+	fetch('../luci-app-natter/root/www/luci-static/resources/view/natter/natter.js').then(function(response){return response.text()}).then(function(source){
+		function expression(name,next){var start=source.indexOf('var '+name+' =')+('var '+name+' =').length;var end=source.indexOf(next,start);return source.slice(start,end).replace(/;\s*$/,'').trim()}
+		var base=Function('return ('+expression('BASE_STYLE','var MOBILE_STYLE')+')')();
+		var mobile=Function('return ('+expression('MOBILE_STYLE','function prepareResponsiveTable')+')')();
+		document.getElementById('natter-source-style').textContent=base+mobile;
+		document.documentElement.dataset.stylesLoaded='yes';
+	}).catch(function(error){document.body.dataset.styleError=String(error)});
+</script>
+</body>
+</html>

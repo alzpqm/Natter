@@ -61,7 +61,7 @@ firewall3，尚未納入此整合。
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。本工作樹
-目前候選版本為 `openwrt-2.2.1-r20`，通過實機 release gate 後才會作為 Release
+目前候選版本為 `openwrt-2.2.1-r21`，通過實機 release gate 後才會作為 Release
 提供 OpenWrt 25.12 的 APK 與 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀
 對應版本的套件管理指令。
 

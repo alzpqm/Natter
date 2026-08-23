@@ -463,12 +463,20 @@ def mapped_address(response, transaction_id):
         raise ValueError("unexpected STUN response")
     if response[8:20] != transaction_id:
         raise ValueError("STUN transaction mismatch")
+    if length & 0x03:
+        raise ValueError("unaligned STUN response length")
+    if len(response) < 20 + length:
+        raise ValueError("truncated STUN response")
 
     offset = 20
-    end = min(len(response), 20 + length)
+    end = 20 + length
     while offset + 4 <= end:
         attribute_type, attribute_length = struct.unpack("!HH", response[offset:offset + 4])
-        value = response[offset + 4:offset + 4 + attribute_length]
+        value_end = offset + 4 + attribute_length
+        next_offset = offset + 4 + ((attribute_length + 3) & ~3)
+        if value_end > end or next_offset > end:
+            raise ValueError("truncated STUN attribute")
+        value = response[offset + 4:value_end]
         if attribute_length >= 8 and len(value) >= 8 and value[1] == 0x01:
             if attribute_type == 0x0020:
                 port = struct.unpack("!H", value[2:4])[0] ^ 0x2112
@@ -479,7 +487,7 @@ def mapped_address(response, transaction_id):
                 return socket.inet_ntoa(raw_ip), port
             if attribute_type == 0x0001:
                 return socket.inet_ntoa(value[4:8]), struct.unpack("!H", value[2:4])[0]
-        offset += 4 + ((attribute_length + 3) & ~3)
+        offset = next_offset
     raise ValueError("STUN response has no IPv4 mapped address")
 
 
@@ -704,6 +712,7 @@ def waiting_runtime_state(instance, section, interface, protocol, bind_port,
 
 def runtime_status():
     by_instance = {}
+    interface_inside_ips = {}
     for path in sorted(glob.glob("/var/run/natter/*.state")):
         item = {}
         try:
@@ -761,7 +770,9 @@ def runtime_status():
         running = bool(process.get("running"))
         current = by_instance.get(instance)
         section_config = config.get(section, {})
-        inside_ip = interface_status(interface)["inside_ip"] if interface else ""
+        if interface and interface not in interface_inside_ips:
+            interface_inside_ips[interface] = interface_status(interface)["inside_ip"]
+        inside_ip = interface_inside_ips.get(interface, "")
         target_ip = section_config.get("target_ip", "")
         target_port = section_config.get("target_port", "")
 
