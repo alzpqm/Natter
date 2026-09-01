@@ -1,0 +1,88 @@
+--- a/natter.py
++++ b/natter.py
+@@ -231,6 +231,9 @@
+     class ServerUnavailable(Exception):
+         pass
+ 
++    class LocalAddressUnavailable(Exception):
++        pass
++
+     def __init__(self, stun_server_list, source_host="0.0.0.0", source_port=0,
+                  interface=None, udp=False):
+         if not stun_server_list:
+@@ -243,18 +246,36 @@
+ 
+     def get_mapping(self):
+         first = self.stun_server_list[0]
++        reported_servers = set()
++        last_outage_log = None
+         while True:
+             if self.source_port:
+                 set_reuse_port(self.source_port)
+             try:
+                 return self._get_mapping()
++            except StunClient.LocalAddressUnavailable:
++                Logger.error(
++                    "stun: Local bind address is no longer available"
++                )
++                raise NatterExitException("Local IP address has changed")
+             except StunClient.ServerUnavailable as ex:
+-                Logger.warning("stun: STUN server %s is unavailable: %s" % (
+-                    addr_to_uri(self.stun_server_list[0], udp = self.udp), ex
+-                ))
++                server_uri = addr_to_uri(
++                    self.stun_server_list[0], udp = self.udp
++                )
++                message = "stun: STUN server %s is unavailable: %s" % (
++                    server_uri, ex
++                )
++                if server_uri not in reported_servers:
++                    Logger.warning(message)
++                    reported_servers.add(server_uri)
++                else:
++                    Logger.debug(message)
+                 self.stun_server_list.append(self.stun_server_list.pop(0))
+                 if self.stun_server_list[0] == first:
+-                    Logger.error("stun: No STUN server is available right now")
++                    now = time.time()
++                    if last_outage_log is None or now - last_outage_log >= 300:
++                        Logger.error("stun: No STUN server is available right now")
++                        last_outage_log = now
+                     # force sleep for 10 seconds, then try the next loop
+                     time.sleep(10)
+ 
+@@ -264,13 +285,18 @@
+         stun_host, stun_port = self.stun_server_list[0]
+         sock = socket.socket(socket.AF_INET, socket_type)
+         try:
+-            socket_set_opt(
+-                sock,
+-                reuse       = True,
+-                bind_addr   = (self.source_host, self.source_port),
+-                interface   = self.interface,
+-                timeout     = 3
+-            )
++            try:
++                socket_set_opt(
++                    sock,
++                    reuse       = True,
++                    bind_addr   = (self.source_host, self.source_port),
++                    interface   = self.interface,
++                    timeout     = 3
++                )
++            except (OSError, socket.error) as ex:
++                if getattr(ex, "errno", None) == errno.EADDRNOTAVAIL:
++                    raise StunClient.LocalAddressUnavailable(ex)
++                raise
+             sock.connect((stun_host, stun_port))
+             inner_addr = sock.getsockname()
+             self.source_host, self.source_port = inner_addr
+@@ -299,6 +325,8 @@
+                 addr_to_uri(inner_addr, udp=self.udp)
+             ))
+             return inner_addr, outer_addr
++        except StunClient.LocalAddressUnavailable:
++            raise
+         except (OSError, ValueError, struct.error, socket.error) as ex:
+             raise StunClient.ServerUnavailable(ex)
+         finally:

@@ -679,6 +679,12 @@ def state_belongs_to_process(state, process):
     return updated_at + 2 >= started_at
 
 
+def mapped_inside_ip(value):
+    """Return the IPv4 portion of a persisted inside endpoint."""
+    host, separator, _ = str(value or "").rpartition(":")
+    return host if separator and valid_ipv4(host) else ""
+
+
 def waiting_runtime_state(instance, section, interface, protocol, bind_port,
                           inside_ip, target_ip, target_port, process):
     started_at = process_start_time(process.get("pid"))
@@ -712,7 +718,7 @@ def waiting_runtime_state(instance, section, interface, protocol, bind_port,
 
 def runtime_status():
     by_instance = {}
-    interface_inside_ips = {}
+    interface_statuses = {}
     for path in sorted(glob.glob("/var/run/natter/*.state")):
         item = {}
         try:
@@ -747,6 +753,18 @@ def runtime_status():
     if not isinstance(instances, dict):
         instances = {}
 
+    global_enabled = config.get("globals", {}).get("enabled") == "1"
+    for instance, current in list(by_instance.items()):
+        if instance in instances:
+            continue
+        section = config.get(str(current.get("config") or ""), {})
+        active_preflight = (
+            current.get("state_owner") == "preflight" and global_enabled and
+            section.get(".type") == "instance" and section.get("enabled") == "1"
+        )
+        if not active_preflight:
+            by_instance.pop(instance, None)
+
     for instance, process in instances.items():
         if not isinstance(process, dict):
             continue
@@ -770,9 +788,10 @@ def runtime_status():
         running = bool(process.get("running"))
         current = by_instance.get(instance)
         section_config = config.get(section, {})
-        if interface and interface not in interface_inside_ips:
-            interface_inside_ips[interface] = interface_status(interface)["inside_ip"]
-        inside_ip = interface_inside_ips.get(interface, "")
+        if interface and interface not in interface_statuses:
+            interface_statuses[interface] = interface_status(interface)
+        current_interface = interface_statuses.get(interface, {})
+        inside_ip = current_interface.get("inside_ip", "")
         target_ip = section_config.get("target_ip", "")
         target_port = section_config.get("target_port", "")
 
@@ -811,6 +830,20 @@ def runtime_status():
         elif not running and current.get("status") != "disabled":
             current["status"] = "error"
             current["error"] = "mapping process is not running"
+        elif current.get("status") == "ok":
+            mapped_ip = mapped_inside_ip(current.get("mapped_inside"))
+            if not current_interface.get("up") or not inside_ip:
+                current["status"] = "error"
+                current["error_code"] = "interface-unavailable"
+                current["error"] = "interface is unavailable; mapping must be rebuilt"
+            elif mapped_ip != inside_ip:
+                current["status"] = "error"
+                current["error_code"] = "interface-address-changed"
+                current["error"] = (
+                    "interface IPv4 address changed from %s to %s; mapping must be rebuilt" %
+                    (mapped_ip or "unknown", inside_ip)
+                )
+                current["current_inside_ip"] = inside_ip
 
     results = [by_instance[name] for name in sorted(by_instance)]
     print(json.dumps(results, separators=(",", ":")))

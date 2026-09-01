@@ -102,7 +102,12 @@ const mappings = [
 	{ instance: 'ok', interface: 'wanct', protocol: 'tcp', status: 'ok' },
 	{ instance: 'starting', interface: 'wancm', protocol: 'udp', status: 'starting' },
 	{ instance: 'error', interface: 'wan2', protocol: 'tcp', status: 'error', error: 'failed' },
-	{ instance: 'stalled', interface: 'wan2', protocol: 'udp', status: 'stalled', error: 'stalled' }
+	{ instance: 'stalled', interface: 'wan2', protocol: 'udp', status: 'stalled', error: 'stalled' },
+	{
+		instance: 'stale', interface: 'wan2', protocol: 'tcp', status: 'error',
+		error_code: 'interface-address-changed', mapped_inside: '192.0.2.30:33001',
+		current_inside_ip: '192.0.2.3'
+	}
 ];
 const failures = [];
 
@@ -133,7 +138,7 @@ if (!page.buttons.restart.disabled)
 if (page.buttons.refresh.disabled)
 	failures.push('refresh must remain enabled for running-disabled');
 
-const expectedRows = { total: 4, mapped: 1, waiting: 1, errors: 2 };
+const expectedRows = { total: 5, mapped: 1, waiting: 1, errors: 3 };
 Object.keys(expectedRows).forEach(filter => {
 	page.setRuntimeFilter(filter);
 	if (page.runtimeTableBody.children.length !== expectedRows[filter]) {
@@ -149,7 +154,7 @@ Object.keys(expectedRows).forEach(filter => {
 });
 
 page.setRuntimeFilter('unknown-filter');
-if (page.runtimeFilter !== 'total' || page.runtimeTableBody.children.length !== 4)
+if (page.runtimeFilter !== 'total' || page.runtimeTableBody.children.length !== 5)
 	failures.push('unknown runtime filter must fall back to total');
 
 if (failures.length) {
@@ -158,4 +163,4 @@ if (failures.length) {
 }
 
 console.log('ok - running-disabled controls preserve stop access');
-console.log('ok - runtime summary filters return 4/1/1/2 rows with accurate aria state');
+console.log('ok - runtime summary filters return 5/1/1/3 rows with accurate aria state');

@@ -231,6 +231,12 @@ function runtimeDetail(item) {
 	var detail = String(item && item.error || '');
 	var stalled;
 
+	if (item && item.error_code === 'interface-unavailable')
+		return _('所選 WAN 目前沒有可用的 IPv4 位址；舊映射已失效，服務會在介面恢復後重建。');
+	if (item && item.error_code === 'interface-address-changed')
+		return _('WAN IPv4 位址已從 %s 變更為 %s；畫面中的公網端點是舊映射，必須重建。')
+			.format(String(item.mapped_inside || '—').split(':')[0] || '—',
+				String(item.current_inside_ip || '—'));
 	if (detail === 'waiting for a STUN mapping response')
 		return item.wait_seconds != null
 			? _('正在等待 STUN 回應（已等待 %s 秒）').format(item.wait_seconds)

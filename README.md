@@ -5,9 +5,13 @@ Expose your port behind full-cone NAT to the Internet.
 [中文文档](docs/README.md)
 
 
-## OpenWrt 多 WAN 版本
+## OpenWrt 25.12+ 多 WAN 版本
 
-本 Fork 同時提供可在 OpenWrt 22.03 以上使用的多 WAN 整合套件，支援搭配
+> **支援政策：** 自 `openwrt-2.2.1-r24` 起，本 Fork 只支援使用 APK 套件管理器的
+> OpenWrt 25.12 以上版本。OpenWrt 24.10 與更早版本、IPK／opkg 套件均已停止支援
+> 並封存，不再建置、測試或修復。詳見[舊版支援封存說明](openwrt/LEGACY_SUPPORT.md)。
+
+本 Fork 提供 OpenWrt 25.12 以上使用的多 WAN 整合套件，支援搭配
 `mwan3`，但不依賴 `mwan3`。已安裝 mwan3 時會將 DNS、UDP STUN 綁定到指定 WAN
 裝置，TCP STUN、Keepalive 與映射 socket 綁定到指定 WAN 來源位址，並使用該介面的
 route mark 避免 failover 或負載平衡切換出口。路由器本機 socket 使用 OpenClash
@@ -19,20 +23,17 @@ mwan3 時則使用一般 OpenWrt WAN 路由。
 - 自動保留固定內部埠，避免代理程式的臨時 UDP socket 搶先佔用
 - 手機畫面會將表格改為卡片排列，避免欄位重疊
 - OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
-- 目前套件與 SHA256：[`OpenWrt Release`](https://github.com/alzpqm/Natter/releases/tag/openwrt-2.2.1-r17)
+- 目前套件與 SHA256：[`OpenWrt latest Release`](https://github.com/alzpqm/Natter/releases/latest)
 
 Release 內含：
 
-- `natter-2.2.1-r17.apk`
-- `luci-app-natter-2.2.1-r17.apk`
-- `natter_2.2.1-r17_all.ipk`（OpenWrt 22.03）
-- `luci-app-natter_2.2.1-r17_all.ipk`（OpenWrt 22.03）
+- `natter-2.2.1-r24.apk`
+- `luci-app-natter-2.2.1-r24.apk`
 
-OpenWrt 25.12 以上使用 APK；OpenWrt 22.03–24.10 使用舊式 IPK。以下指令會從 Fork
-的最新 Release 取得對應套件。22.03 以前的 firewall3 版本尚未納入，因為本整合
-依賴 firewall4；請不要在 21.02 或更早版本直接安裝這些套件。
+以下指令會從 Fork 的最新 Release 取得 OpenWrt 25.12+ APK。請勿在 OpenWrt 24.10
+或更早版本安裝；latest Release 不再提供 IPK。
 
-### OpenWrt 25.12 以上（APK）
+### 安裝（OpenWrt 25.12 以上）
 
 ```sh
 rm -f /tmp/natter_openwrt_release /tmp/natter.apk /tmp/luci-app-natter.apk
@@ -51,27 +52,6 @@ luci_url=$(jsonfilter -i /tmp/natter_openwrt_release \
   { echo "luci-app-natter APK latest version get failed"; exit 1; }
 apk add --force-overwrite --clean-protected --allow-untrusted --no-chown \
   /tmp/natter.apk /tmp/luci-app-natter.apk
-```
-
-### OpenWrt 22.03–24.10（IPK）
-
-```sh
-rm -f /tmp/natter_openwrt_release /tmp/natter.ipk /tmp/luci-app-natter.ipk
-opkg update
-opkg install luci luci-base luci-compat
-curl -fL --retry 2 https://api.github.com/repos/alzpqm/Natter/releases/latest \
-  -o /tmp/natter_openwrt_release
-
-core_url=$(jsonfilter -i /tmp/natter_openwrt_release \
-  -e '@.assets[*].browser_download_url' | grep -E '/natter_[^/]+_all\.ipk$' | head -n1 || true)
-luci_url=$(jsonfilter -i /tmp/natter_openwrt_release \
-  -e '@.assets[*].browser_download_url' | grep -E '/luci-app-natter_[^/]+_all\.ipk$' | head -n1 || true)
-[ -n "$core_url" ] && curl -fL --retry 2 "$core_url" -o /tmp/natter.ipk || \
-  { echo "Natter IPK latest version get failed"; exit 1; }
-[ -n "$luci_url" ] && curl -fL --retry 2 "$luci_url" -o /tmp/luci-app-natter.ipk || \
-  { echo "luci-app-natter IPK latest version get failed"; exit 1; }
-opkg install --force-overwrite /tmp/natter.ipk
-opkg install --force-overwrite /tmp/luci-app-natter.ipk
 ```
 
 安裝套件後，請依 `openwrt/README.md` 建立設定並執行

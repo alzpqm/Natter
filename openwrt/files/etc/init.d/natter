@@ -35,7 +35,8 @@ upgrade_guard_active() {
 # OpenWrt's package maintainer scripts call this init script with `stop` before
 # an upgrade. rc.common's generic stop always calls procd_kill; bypass only
 # that package-managed stop so a manual worker survives until post-upgrade.
-# APK uses the guard written by preinst, while opkg exports PKG_UPGRADE.
+# The APK preinst guard and OpenWrt's maintainer-script upgrade signal cover
+# package-managed replacement without stopping a previously running service.
 if [ "${action:-}" = stop ] && {
 	[ "${PKG_UPGRADE:-0}" = 1 ] || upgrade_guard_active
 }; then
@@ -237,13 +238,19 @@ start_protocol_instance() {
 
 	network_get_device device "$interface"
 	[ -n "$device" ] || {
-		log_msg "$section: OpenWrt interface '$interface' has no active L3 device"
-		return 1
+		port_error="OpenWrt interface '$interface' has no active L3 device"
+		log_msg "$section: $port_error"
+		write_error_state "$section" "$process_name" "$interface" "$protocol" \
+			"$target_ip" "$target_port" "$port_error"
+		return 0
 	}
 	network_get_ipaddr bind_ip "$interface"
 	valid_ipv4 "$bind_ip" || {
-		log_msg "$section: OpenWrt interface '$interface' has no active IPv4 address"
-		return 1
+		port_error="OpenWrt interface '$interface' has no active IPv4 address"
+		log_msg "$section: $port_error"
+		write_error_state "$section" "$process_name" "$interface" "$protocol" \
+			"$target_ip" "$target_port" "$port_error"
+		return 0
 	}
 	valid_ipv4 "$dns_server" || {
 		log_msg "$section: globals.dns_server must be an IPv4 address"
@@ -361,10 +368,12 @@ start_protocol_instance() {
 	if [ "$isolation" -eq 1 ]; then
 		procd_set_param env NATTER_OPENWRT_LOG=1 NATTER_INSTANCE="$process_name" NATTER_CONFIG_SECTION="$section" \
 			NATTER_INTERFACE="$interface" \
+			NATTER_BIND_IP="$bind_ip" \
 			NATTER_SO_MARK="$mark"
 	else
 		procd_set_param env NATTER_OPENWRT_LOG=1 NATTER_INSTANCE="$process_name" NATTER_CONFIG_SECTION="$section" \
-			NATTER_INTERFACE="$interface"
+			NATTER_INTERFACE="$interface" \
+			NATTER_BIND_IP="$bind_ip"
 	fi
 	procd_set_param stdout 1
 	procd_set_param stderr 1
@@ -404,8 +413,8 @@ start_service() {
 		if [ -f "$UPGRADE_RUNTIME_STATE" ]; then
 			upgrade_runtime="$(cat "$UPGRADE_RUNTIME_STATE" 2>/dev/null)"
 		else
-			# Older opkg transactions may not have written the marker. The
-			# upgrade stop guard keeps a still-running procd service visible.
+			# If a package transaction did not preserve the marker, the upgrade
+			# stop guard keeps a still-running procd service visible.
 			/etc/init.d/natter running >/dev/null 2>&1 && upgrade_runtime=running
 		fi
 		rm -f "$UPGRADE_RUNTIME_STATE" "$UPGRADE_GUARD"
@@ -428,6 +437,7 @@ start_service() {
 	fi
 	[ "$enabled" -eq 1 ] || {
 		"$FIREWALL_HELPER" clear
+		rm -f /var/run/natter/*.state 2>/dev/null
 		return 0
 	}
 
@@ -459,15 +469,12 @@ stop_service() {
 }
 
 reload_service() {
-	local enabled
-
-	config_load natter
-	config_get_bool enabled globals enabled 0
-	if [ "$enabled" -eq 1 ]; then
-		start_service
-	else
-		stop
-	fi
+	# rc.common invokes custom reload_service() outside rc_procd().  Calling
+	# start_service() directly therefore updates firewall files but never
+	# commits a replacement procd instance set.  Re-enter start(), which opens
+	# and closes a real procd "set" transaction; NATTER_BIND_IP also makes UDP
+	# workers change epoch when only the PPPoE address changed.
+	start "$@"
 }
 
 add_interface_trigger() {

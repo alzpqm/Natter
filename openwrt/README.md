@@ -1,9 +1,13 @@
 # Natter for OpenWrt（多 WAN／可選 mwan3 隔離版）
 
-這個目錄是一個可直接放入 OpenWrt source tree 或 SDK 的 package。它固定使用
-Natter 2.2.1，支援 OpenWrt 22.03 以上的 firewall4；`mwan3` 是可選整合，不是
+這個目錄是一個可直接放入 OpenWrt 25.12+ source tree 或 SDK 的 APK package。
+它固定使用 Natter 2.2.1；`mwan3` 是可選整合，不是
 套件依賴。安裝 mwan3 時可為每條 WAN 啟動獨立的
 TCP／UDP Natter 實例，也可用一個設定同時啟動彼此獨立的 TCP + UDP 映射。
+
+> 自 `openwrt-2.2.1-r24` 起，只支援 OpenWrt 25.12 以上 APK。OpenWrt 24.10
+> 與更早版本及 IPK／opkg 已停止支援並封存，不再建置或測試。請參閱
+> [`LEGACY_SUPPORT.md`](LEGACY_SUPPORT.md)。
 
 ## 設計重點
 
@@ -53,19 +57,15 @@ make package/natter/compile V=s
 make package/natter/luci-app-natter/compile V=s
 ```
 
-產生的 `.ipk`／`.apk` 可依該 OpenWrt 版本的套件管理方式安裝。OpenWrt 22.03–24.10
-使用 `.ipk` 與 `opkg`；OpenWrt 25.12 以上使用 `.apk` 與 `apk`。package 依賴
-`python3-light` 與 `firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。OpenWrt 21.02 或更早版本使用
-firewall3，尚未納入此整合。
+現行建置只以 OpenWrt 25.12+ SDK 產生 `.apk`。package 依賴 `python3-light` 與
+`firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。不要使用舊 SDK 產生 IPK。
 
 ### 從 GitHub Release 安裝
 
-以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。本工作樹
-目前候選版本為 `openwrt-2.2.1-r21`，通過實機 release gate 後才會作為 Release
-提供 OpenWrt 25.12 的 APK 與 OpenWrt 22.03 的舊式 IPK；正式安裝前請先閱讀
-對應版本的套件管理指令。
+以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。目前發布
+版本為 `openwrt-2.2.1-r24`，latest Release 只提供 OpenWrt 25.12+ APK。
 
-OpenWrt 25.12 以上（APK）：
+OpenWrt 25.12 以上：
 
 ```sh
 rm -f /tmp/natter_openwrt_release /tmp/natter.apk /tmp/luci-app-natter.apk
@@ -78,24 +78,6 @@ luci_url=$(jsonfilter -i /tmp/natter_openwrt_release -e '@.assets[*].browser_dow
 [ -n "$luci_url" ] && curl -fL --retry 2 "$luci_url" -o /tmp/luci-app-natter.apk || { echo "luci-app-natter APK latest version get failed"; exit 1; }
 apk add --force-overwrite --clean-protected --allow-untrusted --no-chown /tmp/natter.apk /tmp/luci-app-natter.apk
 ```
-
-OpenWrt 22.03–24.10（IPK）：
-
-```sh
-rm -f /tmp/natter_openwrt_release /tmp/natter.ipk /tmp/luci-app-natter.ipk
-opkg update
-opkg install luci luci-base luci-compat
-curl -fL --retry 2 https://api.github.com/repos/alzpqm/Natter/releases/latest -o /tmp/natter_openwrt_release
-core_url=$(jsonfilter -i /tmp/natter_openwrt_release -e '@.assets[*].browser_download_url' | grep -E '/natter_[^/]+_all\.ipk$' | head -n1 || true)
-luci_url=$(jsonfilter -i /tmp/natter_openwrt_release -e '@.assets[*].browser_download_url' | grep -E '/luci-app-natter_[^/]+_all\.ipk$' | head -n1 || true)
-[ -n "$core_url" ] && curl -fL --retry 2 "$core_url" -o /tmp/natter.ipk || { echo "Natter IPK latest version get failed"; exit 1; }
-[ -n "$luci_url" ] && curl -fL --retry 2 "$luci_url" -o /tmp/luci-app-natter.ipk || { echo "luci-app-natter IPK latest version get failed"; exit 1; }
-opkg install --force-overwrite /tmp/natter.ipk
-opkg install --force-overwrite /tmp/luci-app-natter.ipk
-```
-
-本 Release 的 IPK 是以 OpenWrt 22.03.7 x86_64 SDK 建置並驗證；套件內容為
-`Architecture: all`，但仍應以 22.03 系列的相同 firewall4／LuCI 套件環境為準。
 
 安裝 `luci-app-natter` 後，頁面位於 **Services → Natter**。首次安裝的全域開關
 預設關閉；建立並檢查 mapping 後再於頁面啟用，因此不會因安裝套件立即開放任何連入埠。
