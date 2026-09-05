@@ -20,20 +20,51 @@ function isRunningState(state) {
 		state === STATUS_RUNNING_DISABLED;
 }
 var BASE_STYLE =
-	'.natter-page .cbi-section{border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:10px;margin-bottom:1.1em;box-shadow:0 2px 10px rgba(0,0,0,.035)}' +
+	'.natter-page{--natter-accent:#2563b9;--natter-good:#218739;--natter-warn:#c47700;--natter-danger:#c93442}' +
+	'.natter-hero{position:relative;isolation:isolate;overflow:hidden;padding:1.2em 1.35em;margin:0 0 1.1em;border:1px solid rgba(37,99,185,.22);border-radius:14px;background:linear-gradient(135deg,rgba(37,99,185,.12),rgba(33,135,57,.055) 58%,var(--background-color-high,#fff));box-shadow:0 8px 24px rgba(20,55,95,.08)}' +
+	'.natter-hero:after{content:"";position:absolute;z-index:-1;right:-4em;top:-5em;width:14em;height:14em;border-radius:50%;background:rgba(37,99,185,.075);pointer-events:none}' +
+	'.natter-hero-main{display:flex;align-items:center;justify-content:space-between;gap:1.25em}' +
+	'.natter-hero-copy{min-width:0;max-width:52em}' +
+	'.natter-eyebrow,.natter-section-kicker{display:block;color:var(--natter-accent);font-size:.74em;font-weight:700;letter-spacing:.08em;text-transform:uppercase}' +
+	'.natter-hero-title{margin:.12em 0 .2em;font-size:2em;line-height:1.15}' +
+	'.natter-hero-description{margin:0;color:var(--text-color-low,#667085);line-height:1.55}' +
+	'.natter-hero-health{display:flex;align-items:center;gap:.7em;flex:0 0 auto;min-width:15.5em;padding:.72em .85em;border:1px solid var(--border-color-medium,rgba(127,127,127,.25));border-radius:10px;background:var(--background-color-high,rgba(255,255,255,.8));box-shadow:0 3px 12px rgba(0,0,0,.05)}' +
+	'.natter-health-dot{width:.72em;height:.72em;flex:0 0 .72em;border-radius:50%;background:var(--text-color-low,#777);box-shadow:0 0 0 4px rgba(127,127,127,.12)}' +
+	'.natter-hero-health.is-success .natter-health-dot{background:var(--natter-good);box-shadow:0 0 0 4px rgba(33,135,57,.14)}' +
+	'.natter-hero-health.is-warning .natter-health-dot{background:var(--natter-warn);box-shadow:0 0 0 4px rgba(196,119,0,.14)}' +
+	'.natter-hero-health.is-danger .natter-health-dot{background:var(--natter-danger);box-shadow:0 0 0 4px rgba(201,52,66,.14)}' +
+	'.natter-health-copy{display:block;min-width:0}' +
+	'.natter-health-title,.natter-health-detail{display:block}' +
+	'.natter-health-title{font-weight:700}' +
+	'.natter-health-detail{margin-top:.12em;color:var(--text-color-low,#667085);font-size:.86em;line-height:1.4}' +
+	'.natter-feature-row{display:flex;align-items:center;flex-wrap:wrap;gap:.45em;margin-top:.9em}' +
+	'.natter-feature-chip{display:inline-flex;align-items:center;min-height:2em;padding:.28em .68em;border:1px solid rgba(37,99,185,.18);border-radius:999px;background:rgba(37,99,185,.07);font-size:.84em;font-weight:600}' +
+	'.natter-port-note{margin:.8em 0 0;padding:.62em .78em;border-left:3px solid var(--natter-accent);border-radius:0 7px 7px 0;background:rgba(37,99,185,.065);font-size:.9em;line-height:1.5}' +
+	'.natter-page .cbi-section{border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:12px;margin-bottom:1.1em;box-shadow:0 3px 14px rgba(0,0,0,.045)}' +
+	'.natter-panel{position:relative}' +
+	'.natter-runtime-panel{border-top:3px solid var(--natter-accent)!important}' +
+	'.natter-probe-panel{border-top:3px solid var(--natter-good)!important}' +
+	'.natter-check-panel{border-top:3px solid var(--natter-warn)!important}' +
+	'.natter-config-map{padding-top:.25em}' +
 	'.natter-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1em;flex-wrap:wrap}' +
-	'.natter-section-title{display:flex;align-items:center;gap:.5em;margin:0}' +
+	'.natter-heading-copy{min-width:0}' +
+	'.natter-section-title{display:flex;align-items:center;gap:.5em;margin:.12em 0 0}' +
 	'.natter-section-help{color:var(--text-color-low,#777);margin:.35em 0 .8em;line-height:1.5}' +
-	'.natter-section-kicker{margin:-.35em 0 .35em;color:var(--text-color-low,#777);font-size:.75em;font-weight:600;letter-spacing:.08em;text-transform:uppercase}' +
+	'.natter-panel-meta{display:flex;align-items:center;justify-content:flex-end;gap:.55em;flex-wrap:wrap}' +
+	'.natter-result-chip{display:inline-flex;align-items:center;min-height:1.9em;padding:.22em .62em;border:1px solid var(--border-color-medium,rgba(127,127,127,.25));border-radius:999px;background:var(--background-color-low,rgba(127,127,127,.08));font-size:.84em;font-weight:600;white-space:nowrap}' +
+	'.natter-result-chip.is-success{border-color:rgba(33,135,57,.28);background:rgba(33,135,57,.1);color:var(--natter-good)}' +
+	'.natter-result-chip.is-warning{border-color:rgba(196,119,0,.3);background:rgba(196,119,0,.1);color:var(--natter-warn)}' +
+	'.natter-result-chip.is-danger{border-color:rgba(201,52,66,.3);background:rgba(201,52,66,.1);color:var(--natter-danger)}' +
 	'.natter-table-wrap{width:100%;overflow-x:auto;border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:8px}' +
 	'.natter-table-wrap>table{margin:0;min-width:760px}' +
 	'.natter-runtime-table thead th{position:sticky;top:0;z-index:1;background:var(--background-color-high,#fff);white-space:nowrap}' +
 	'.natter-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65em;margin:.8em 0 1em}' +
 	'.natter-summary-card{min-width:0;padding:.8em .9em;border:1px solid var(--border-color-medium,rgba(127,127,127,.28));border-radius:8px;background:var(--background-color-low,rgba(127,127,127,.06))}' +
 	'button.natter-summary-card{width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;appearance:none}' +
-	'button.natter-summary-card:hover{border-color:var(--text-color-medium,#888)}' +
+	'button.natter-summary-card{transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}' +
+	'button.natter-summary-card:hover{border-color:var(--text-color-medium,#888);transform:translateY(-1px)}' +
 	'button.natter-summary-card:focus-visible{outline:2px solid var(--primary-color,#3478c5);outline-offset:2px}' +
-	'button.natter-summary-card[aria-pressed="true"]{box-shadow:0 0 0 2px var(--primary-color,#3478c5);background:var(--background-color-high,#fff)}' +
+	'button.natter-summary-card[aria-pressed="true"]{box-shadow:0 0 0 2px var(--natter-accent);background:var(--background-color-high,#fff)}' +
 	'.natter-summary-card .natter-summary-label{display:block;color:var(--text-color-low,#777);font-size:.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
 	'.natter-summary-card .natter-summary-value{display:block;margin-top:.25em;font-size:1.5em;line-height:1.15;font-variant-numeric:tabular-nums}' +
 	'.natter-summary-card.natter-summary-total{border-left:4px solid var(--text-color-medium,#888)}' +
@@ -44,38 +75,49 @@ var BASE_STYLE =
 	'.natter-runtime-table tr.natter-state-error>td{background:rgba(210,50,50,.08)}' +
 	'.natter-runtime-table tr.natter-state-waiting>td{background:rgba(220,155,0,.07)}' +
 	'.natter-runtime-table tr.natter-state-stalled>td{background:rgba(210,50,50,.08)}' +
+	'.natter-runtime-table tbody tr:hover>td{filter:saturate(1.12)}' +
 	'.natter-label-danger{background:#c93232!important;color:#fff!important}' +
 	'.natter-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:.5em;margin-top:1em}' +
-	'.natter-action-bar .btn{margin:0!important}' +
+	'.natter-action-bar .btn{min-height:2.55em;margin:0!important}' +
 	'.natter-status-live{display:flex;align-items:baseline;gap:.45em;flex-wrap:wrap;font-weight:600;line-height:1.8}' +
 	'.natter-status-reason{color:var(--text-color-low,#777);font-weight:400}' +
 	'.natter-service-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.45em;margin:.45em 0 .8em}' +
-	'.natter-endpoint{display:inline-block;max-width:100%;padding:.05em .25em;border-radius:3px;background:var(--background-color-low,rgba(127,127,127,.08));font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;direction:ltr;text-align:left;overflow-wrap:anywhere;word-break:break-word}' +
+	'.natter-endpoint{display:inline-block;max-width:100%;padding:.08em .32em;border:1px solid rgba(127,127,127,.12);border-radius:4px;background:var(--background-color-low,rgba(127,127,127,.08));font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;font-variant-numeric:tabular-nums;direction:ltr;text-align:left;overflow-wrap:anywhere;word-break:break-word;user-select:all}' +
 	'.natter-refresh-time{color:var(--text-color-low,#777);font-size:.9em;white-space:nowrap}' +
 	'.natter-runtime-meta{display:flex;align-items:center;gap:.75em;flex-wrap:wrap}' +
 	'.natter-inline-note{font-size:.9em;color:var(--text-color-low,#777)}';
 var MOBILE_STYLE = '@media screen and (max-width:700px){' +
+	'.natter-hero{padding:1em;margin-bottom:.8em;border-radius:11px}' +
+	'.natter-hero-main{display:block}' +
+	'.natter-hero-title{font-size:1.65em}' +
+	'.natter-hero-health{width:100%;min-width:0;margin-top:.85em;box-sizing:border-box}' +
+	'.natter-feature-row{gap:.35em}' +
+	'.natter-feature-chip{font-size:.8em}' +
+	'.natter-port-note{font-size:.86em}' +
+	'.natter-page .cbi-section{border-radius:10px;margin-bottom:.8em}' +
 	'.natter-panel-head{display:block}' +
+	'.natter-panel-meta{justify-content:flex-start;margin-top:.45em}' +
 	'.natter-runtime-meta{margin-top:.35em}' +
 	'.natter-status-live{display:block}' +
 	'.natter-status-reason{display:block;margin-top:.25em;line-height:1.5}' +
 	'.natter-service-meta{margin:.45em 0 .65em}' +
 	'.natter-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5em}' +
-	'.natter-summary-card{padding:.6em .7em}' +
+	'.natter-summary-card{min-height:4.45em;padding:.6em .7em}' +
+	'.natter-summary-card .natter-summary-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.3}' +
 	'.natter-summary-card .natter-summary-value{font-size:1.25em}' +
-	'.natter-action-bar .btn{flex:1 1 calc(50% - .5em);min-width:8em}' +
+	'.natter-action-bar .btn{flex:1 1 calc(50% - .5em);min-width:8em;min-height:44px}' +
 	'.natter-responsive-table{display:block!important;width:100%!important;min-width:0!important}' +
 	'.natter-responsive-table thead{display:none!important}' +
 	'.natter-responsive-table tbody{display:block!important;width:100%!important}' +
-	'.natter-responsive-table tbody>tr{display:block!important;width:100%!important;' +
+	'.natter-responsive-table tbody>tr{display:block!important;width:100%!important;max-width:100%!important;' +
 		'margin:.65em 0;padding:.5em .7em;border:1px solid rgba(127,127,127,.3);' +
-		'border-radius:8px;box-sizing:border-box;box-shadow:0 1px 5px rgba(0,0,0,.04)}' +
+		'border-radius:9px;box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,.05);overflow:hidden}' +
 	'.natter-responsive-table tbody>tr>td{display:grid!important;' +
 		'grid-template-columns:minmax(6.25em,34%) minmax(0,1fr);column-gap:.65em;' +
 		'width:100%!important;min-width:0!important;max-width:100%!important;' +
 		'margin:0!important;padding:.35em 0!important;' +
 		'text-align:left!important;overflow-wrap:anywhere;box-sizing:border-box}' +
-	'.natter-responsive-table tbody>tr>td:before{content:attr(data-title);font-weight:600}' +
+	'.natter-responsive-table tbody>tr>td:before{content:attr(data-title);color:var(--text-color-low,#667085);font-size:.82em;font-weight:700;letter-spacing:.02em;line-height:1.45}' +
 	'.natter-responsive-table tbody>tr>td>*{grid-column:2;max-width:100%;min-width:0}' +
 	'.natter-responsive-table tbody>tr>td[colspan]{display:block!important}' +
 	'.natter-responsive-table tbody>tr>td[colspan]:before{display:none}' +
@@ -84,11 +126,17 @@ var MOBILE_STYLE = '@media screen and (max-width:700px){' +
 	'.natter-runtime-table thead th{position:static}' +
 	'.natter-table-wrap{overflow:visible;border:0}' +
 	'.natter-table-wrap>table{min-width:0}' +
-	'.natter-runtime-actions{position:sticky;bottom:0;z-index:3;padding:.6em .4em;padding-bottom:max(.6em,env(safe-area-inset-bottom));background:var(--background-color-high,#fff);box-shadow:0 -1px 6px rgba(0,0,0,.12)}' +
+	'.natter-endpoint{font-size:.86em}' +
+	'.natter-runtime-actions{position:sticky;bottom:0;z-index:3;padding:.6em .4em;padding-bottom:max(.6em,env(safe-area-inset-bottom));border:1px solid var(--border-color-medium,rgba(127,127,127,.2));border-radius:9px;background:var(--background-color-high,#fff);box-shadow:0 -3px 12px rgba(0,0,0,.13)}' +
 	'}' +
 	'@media screen and (max-width:420px){' +
 	'.natter-action-bar .btn{flex-basis:100%;min-width:0}' +
 	'.natter-runtime-actions .btn{flex-basis:calc(50% - .5em)}' +
+	'.natter-result-chip{white-space:normal}' +
+	'}' +
+	'@media screen and (max-width:360px){' +
+	'.natter-feature-chip{width:100%;justify-content:center;box-sizing:border-box}' +
+	'.natter-runtime-actions .btn{flex-basis:100%}' +
 	'}';
 
 function prepareResponsiveTable(table) {
@@ -227,6 +275,35 @@ function endpointNode(value) {
 	return value === '—' ? value : E('code', { 'class': 'natter-endpoint' }, value);
 }
 
+function sectionHeading(kicker, title) {
+	return E('div', { 'class': 'natter-heading-copy' }, [
+		E('span', { 'class': 'natter-section-kicker' }, kicker),
+		E('h3', { 'class': 'natter-section-title' }, title)
+	]);
+}
+
+function setResultChip(node, state, text) {
+	if (!node)
+		return;
+	node.className = 'natter-result-chip is-%s'.format(state || 'neutral');
+	node.textContent = text;
+}
+
+function countRuntimeStates(mappings) {
+	var counts = { total: 0, mapped: 0, waiting: 0, errors: 0 };
+
+	(mappings || []).forEach(function(item) {
+		counts.total++;
+		if (item.status === 'ok')
+			counts.mapped++;
+		else if (item.status === 'error' || item.status === 'stalled')
+			counts.errors++;
+		else
+			counts.waiting++;
+	});
+	return counts;
+}
+
 function runtimeDetail(item) {
 	var detail = String(item && item.error || '');
 	var stalled;
@@ -282,7 +359,7 @@ return view.extend({
 	},
 
 	updateProbeTable: function(results, error) {
-		var body = this.probeTableBody;
+		var body = this.probeTableBody, okCount = 0, natCount = 0, directCount = 0;
 
 		if (!body)
 			return;
@@ -290,6 +367,7 @@ return view.extend({
 			body.removeChild(body.firstChild);
 
 		if (error) {
+			setResultChip(this.probeSummaryNode, 'danger', _('探測失敗'));
 			if (this.probeUpdatedNode)
 				this.probeUpdatedNode.textContent = _('上次檢查失敗：%s').format(formatClockTime());
 			body.appendChild(E('tr', {}, [
@@ -300,6 +378,7 @@ return view.extend({
 		}
 
 		if (!results || !results.length) {
+			setResultChip(this.probeSummaryNode, 'warning', _('找不到 WAN'));
 			if (this.probeUpdatedNode)
 				this.probeUpdatedNode.textContent = _('檢查時間：%s').format(formatClockTime());
 			body.appendChild(E('tr', {}, [
@@ -309,6 +388,18 @@ return view.extend({
 		}
 		if (this.probeUpdatedNode)
 			this.probeUpdatedNode.textContent = _('檢查時間：%s').format(formatClockTime());
+		results.forEach(function(item) {
+			if (item.status === 'ok')
+				okCount++;
+			if (item.nat === true)
+				natCount++;
+			else if (item.nat === false)
+				directCount++;
+		});
+		setResultChip(this.probeSummaryNode,
+			okCount === results.length ? 'success' : okCount ? 'warning' : 'danger',
+			_('%s/%s 個 WAN 正常 · 經 NAT %s · 直連 %s')
+				.format(okCount, results.length, natCount, directCount));
 
 		results.forEach(function(item) {
 			var state, nat, rowClass;
@@ -375,6 +466,10 @@ return view.extend({
 			'class': 'natter-refresh-time',
 			'aria-live': 'polite'
 		}, _('尚未檢查'));
+		this.probeSummaryNode = E('span', {
+			'class': 'natter-result-chip is-neutral',
+			'aria-live': 'polite'
+		}, _('等待探測'));
 		this.probeButton = E('button', {
 			'type': 'button',
 			'class': 'btn cbi-button cbi-button-action',
@@ -384,10 +479,12 @@ return view.extend({
 			}, this)
 		}, _('探測所有 WAN'));
 
-		return E('div', { 'class': 'cbi-section' }, [
+		return E('div', { 'class': 'cbi-section natter-panel natter-probe-panel' }, [
 			E('div', { 'class': 'natter-panel-head' }, [
-				E('h3', { 'class': 'natter-section-title' }, _('WAN 公網位址')),
-				this.probeUpdatedNode
+				sectionHeading(_('出口檢查'), _('WAN 公網位址')),
+				E('div', { 'class': 'natter-panel-meta' }, [
+					this.probeSummaryNode, this.probeUpdatedNode
+				])
 			]),
 			E('p', { 'class': 'natter-section-help' }, _('已安裝 mwan3 時會逐一探測其 WAN；未安裝 mwan3 時會探測已啟用映射所使用的 WAN。探測使用中國大陸 UDP STUN，且不會新增任何入站防火牆規則。')),
 				E('div', { 'class': 'natter-table-wrap' }, [
@@ -430,7 +527,7 @@ return view.extend({
 	},
 
 	updateConfigCheckTable: function(results, error) {
-		var body = this.configCheckTableBody;
+		var body = this.configCheckTableBody, okCount = 0;
 
 		if (!body)
 			return;
@@ -438,6 +535,7 @@ return view.extend({
 			body.removeChild(body.firstChild);
 
 		if (error) {
+			setResultChip(this.configCheckSummaryNode, 'danger', _('檢查失敗'));
 			if (this.configCheckUpdatedNode)
 				this.configCheckUpdatedNode.textContent = _('上次檢查失敗：%s').format(formatClockTime());
 			body.appendChild(E('tr', {}, [
@@ -447,6 +545,7 @@ return view.extend({
 			return;
 		}
 		if (!results || !results.length) {
+			setResultChip(this.configCheckSummaryNode, 'warning', _('沒有啟用項目'));
 			if (this.configCheckUpdatedNode)
 				this.configCheckUpdatedNode.textContent = _('檢查時間：%s').format(formatClockTime());
 			body.appendChild(E('tr', {}, [
@@ -456,6 +555,13 @@ return view.extend({
 		}
 		if (this.configCheckUpdatedNode)
 			this.configCheckUpdatedNode.textContent = _('檢查時間：%s').format(formatClockTime());
+		results.forEach(function(item) {
+			if (item.status === 'ok')
+				okCount++;
+		});
+		setResultChip(this.configCheckSummaryNode,
+			okCount === results.length ? 'success' : okCount ? 'warning' : 'danger',
+			_('%s/%s 個項目可用').format(okCount, results.length));
 
 		results.forEach(function(item) {
 			var resultNode, text, rowClass;
@@ -515,6 +621,10 @@ return view.extend({
 			'class': 'natter-refresh-time',
 			'aria-live': 'polite'
 		}, _('尚未檢查'));
+		this.configCheckSummaryNode = E('span', {
+			'class': 'natter-result-chip is-neutral',
+			'aria-live': 'polite'
+		}, _('等待檢查'));
 		this.configCheckButton = E('button', {
 			'type': 'button',
 			'class': 'btn cbi-button cbi-button-action',
@@ -524,10 +634,12 @@ return view.extend({
 			}, this)
 		}, _('檢查內部埠'));
 
-		return E('div', { 'class': 'cbi-section' }, [
+		return E('div', { 'class': 'cbi-section natter-panel natter-check-panel' }, [
 			E('div', { 'class': 'natter-panel-head' }, [
-				E('h3', { 'class': 'natter-section-title' }, _('已設定的內部埠')),
-				this.configCheckUpdatedNode
+				sectionHeading(_('設定診斷'), _('已設定的內部埠')),
+				E('div', { 'class': 'natter-panel-meta' }, [
+					this.configCheckSummaryNode, this.configCheckUpdatedNode
+				])
 			]),
 			E('p', { 'class': 'natter-section-help' }, _('使用與 Natter 相同的裝置綁定、socket mark 與埠共用選項檢查已啟用的映射。發生協定衝突時，不會建立防火牆規則。')),
 			E('div', { 'class': 'natter-table-wrap' }, [
@@ -616,6 +728,87 @@ return view.extend({
 		if (state === STATUS_RUNNING)
 			return _('procd 至少有一個執行中的 Natter 實例。');
 		return _('無法判斷服務狀態。');
+	},
+
+	renderHero: function() {
+		this.heroTitleNode = E('strong', {
+			'class': 'natter-health-title'
+		}, _('正在讀取狀態…'));
+		this.heroDetailNode = E('span', {
+			'class': 'natter-health-detail'
+		}, _('請稍候'));
+		this.heroHealthNode = E('div', {
+			'class': 'natter-hero-health is-warning',
+			'aria-live': 'polite'
+		}, [
+			E('span', { 'class': 'natter-health-dot', 'aria-hidden': 'true' }),
+			E('span', { 'class': 'natter-health-copy' }, [
+				this.heroTitleNode, this.heroDetailNode
+			])
+		]);
+
+		return E('section', {
+			'class': 'natter-hero',
+			'aria-labelledby': 'natter-page-title'
+		}, [
+			E('div', { 'class': 'natter-hero-main' }, [
+				E('div', { 'class': 'natter-hero-copy' }, [
+					E('span', { 'class': 'natter-eyebrow' }, _('OpenWrt 多 WAN NAT 穿透')),
+					E('h2', { 'id': 'natter-page-title', 'class': 'natter-hero-title' }, _('Natter')),
+					E('p', { 'class': 'natter-hero-description' },
+						_('集中查看服務、映射與各 WAN 公網位址，並以獨立出口維持 TCP／UDP NAT 映射。'))
+				]),
+				this.heroHealthNode
+			]),
+			E('div', { 'class': 'natter-feature-row', 'aria-label': _('主要功能') }, [
+				E('span', { 'class': 'natter-feature-chip' }, _('多 WAN 個別出口')),
+				E('span', { 'class': 'natter-feature-chip' }, _('中國大陸 STUN 探測')),
+				E('span', { 'class': 'natter-feature-chip' }, _('TCP／UDP 獨立映射'))
+			]),
+			E('p', { 'class': 'natter-port-note' },
+				_('外部埠由上游 NAT 自動分配，無法在此指定；TCP 與 UDP 的外部埠可能不同。'))
+		]);
+	},
+
+	updateHero: function(runtime) {
+		var counts, severity = 'warning', title, detail;
+
+		if (!this.heroHealthNode)
+			return;
+		runtime = runtime || { state: STATUS_UNKNOWN, mappings: [] };
+		counts = countRuntimeStates(runtime.mappings);
+
+		if (this.busy) {
+			title = _('正在處理服務操作');
+			detail = _('完成後會自動重新整理狀態。');
+		}
+		else if (runtime.mappingError) {
+			severity = 'danger';
+			title = _('映射狀態無法讀取');
+			detail = String(runtime.mappingError);
+		}
+		else if (runtime.state === STATUS_RUNNING && counts.total > 0 &&
+		         counts.mapped === counts.total) {
+			severity = 'success';
+			title = _('服務與映射正常');
+			detail = _('%s 個協定映射均已建立').format(counts.total);
+		}
+		else if (runtime.state === STATUS_RUNNING) {
+			severity = counts.errors ? 'danger' : 'warning';
+			title = counts.errors ? _('部分映射發生錯誤') : _('服務執行中，映射尚未完成');
+			detail = _('%s/%s 個映射已建立 · 等待 %s · 錯誤 %s')
+				.format(counts.mapped, counts.total, counts.waiting, counts.errors);
+		}
+		else {
+			severity = runtime.state === STATUS_RUNNING_DISABLED ||
+				runtime.state === STATUS_UNKNOWN ? 'danger' : 'warning';
+			title = this.statusLabel(runtime.state).text;
+			detail = this.statusReason(runtime.state, runtime.service);
+		}
+
+		this.heroHealthNode.className = 'natter-hero-health is-%s'.format(severity);
+		this.heroTitleNode.textContent = title;
+		this.heroDetailNode.textContent = detail;
 	},
 
 	updateServiceMeta: function(service) {
@@ -731,6 +924,7 @@ return view.extend({
 		if (this.statusReasonNode)
 			this.statusReasonNode.textContent = this.statusReason(this.runtime.state,
 				this.runtime.service);
+		this.updateHero(this.runtime);
 		if (this.lastRefreshNode)
 			this.lastRefreshNode.textContent = _('最後更新：%s').format(formatClockTime());
 		this.updateRuntimeSummary(this.runtime.mappings);
@@ -853,24 +1047,14 @@ return view.extend({
 	},
 
 	updateRuntimeSummary: function(mappings) {
-		var total = 0, mapped = 0, waiting = 0, errors = 0;
-
-		(mappings || []).forEach(function(item) {
-			total++;
-			if (item.status === 'ok')
-				mapped++;
-			else if (item.status === 'error' || item.status === 'stalled')
-				errors++;
-			else
-				waiting++;
-		});
+		var counts = countRuntimeStates(mappings);
 
 		if (!this.summaryNodes)
 			return;
-		this.summaryNodes.total.textContent = String(total);
-		this.summaryNodes.mapped.textContent = String(mapped);
-		this.summaryNodes.waiting.textContent = String(waiting);
-		this.summaryNodes.errors.textContent = String(errors);
+		this.summaryNodes.total.textContent = String(counts.total);
+		this.summaryNodes.mapped.textContent = String(counts.mapped);
+		this.summaryNodes.waiting.textContent = String(counts.waiting);
+		this.summaryNodes.errors.textContent = String(counts.errors);
 	},
 
 	renderStatus: function(runtime) {
@@ -892,10 +1076,10 @@ return view.extend({
 			E('tr', {}, [ E('td', { 'colspan': '8' }, _('等待狀態…')) ])
 		]);
 
-		var panel = E('div', { 'class': 'cbi-section' }, [
+		var panel = E('div', { 'class': 'cbi-section natter-panel natter-runtime-panel' }, [
 			E('div', { 'class': 'natter-panel-head' }, [
-				E('h3', { 'class': 'natter-section-title' }, _('執行狀態')),
-				this.lastRefreshNode
+				sectionHeading(_('即時狀態'), _('執行狀態')),
+				E('div', { 'class': 'natter-panel-meta' }, [ this.lastRefreshNode ])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
 				E('label', { 'class': 'cbi-value-title' }, _('服務')),
@@ -951,8 +1135,8 @@ return view.extend({
 		});
 		hasMwan3Wan = Object.keys(mwanInterfaces).length > 0;
 
-		m = new form.Map('natter', _('Natter'),
-			_('可在一般 WAN 或 mwan3 WAN 上建立獨立的 TCP 或 UDP 公網映射。安裝 mwan3 時可啟用 WAN 隔離；未安裝 mwan3 也能正常運行。'));
+		m = new form.Map('natter', _('映射設定'),
+			_('可在一般 WAN 或 mwan3 WAN 上建立獨立的 TCP 或 UDP 公網映射。mwan3 是可選的出口隔離整合，未安裝時 Natter 仍可正常運行。'));
 
 		s = m.section(form.NamedSection, 'globals', 'globals', _('全域設定'));
 		o = s.option(form.Flag, 'enabled', _('啟用 Natter'));
@@ -1085,6 +1269,8 @@ return view.extend({
 		o.modalonly = true;
 
 		return m.render().then(L.bind(function(node) {
+			if (node && node.classList)
+				node.classList.add('natter-config-map');
 			Array.prototype.forEach.call(
 				node.querySelectorAll('table.cbi-section-table'),
 				prepareResponsiveTable
@@ -1101,7 +1287,7 @@ return view.extend({
 			window.setTimeout(L.bind(this.checkConfiguredPorts, this), 0);
 
 			return E('div', { 'class': 'natter-page' }, [ E('style', {}, BASE_STYLE + MOBILE_STYLE),
-				this.renderStatus(runtime), probePanel,
+				this.renderHero(), this.renderStatus(runtime), probePanel,
 				configCheckPanel, node ]);
 		}, this));
 	}

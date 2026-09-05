@@ -114,20 +114,36 @@ const failures = [];
 [
 	'.natter-runtime-actions{position:sticky',
 	'.natter-runtime-actions .btn{flex-basis:calc(50% - .5em)}',
-	'padding-bottom:max(.6em,env(safe-area-inset-bottom))'
+	'padding-bottom:max(.6em,env(safe-area-inset-bottom))',
+	'.natter-hero-main{display:flex',
+	'.natter-action-bar .btn{min-height:2.55em',
+	'.natter-action-bar .btn{flex:1 1 calc(50% - .5em);min-width:8em;min-height:44px}',
+	'@media screen and (max-width:360px)',
+	'.natter-summary-card .natter-summary-label{white-space:normal',
+	'user-select:all'
 ].forEach(rule => {
 	if (!source.includes(rule))
 		failures.push('responsive CSS contract is missing: ' + rule);
 });
 if (source.includes('.natter-action-bar{position:sticky'))
 	failures.push('sticky positioning must not apply to every action bar');
+if (!source.includes('外部埠由上游 NAT 自動分配，無法在此指定'))
+	failures.push('prominent external-port allocation guidance is missing');
 
-page.renderStatus({
+page.renderHero();
+const statusPanel = page.renderStatus({
 	state: 'running-disabled',
 	service: { global_enabled: false, init_enabled: true, procd_running: true },
 	mappings,
 	mappingError: ''
 });
+
+if (!statusPanel.className.includes('natter-runtime-panel'))
+	failures.push('runtime panel visual role class is missing');
+if (!page.heroHealthNode.className.includes('is-danger'))
+	failures.push('running-disabled hero health must be dangerous');
+if (page.heroTitleNode.textContent !== '仍在執行（全域已停用）')
+	failures.push('running-disabled hero title is inaccurate');
 
 if (!page.buttons.start.disabled)
 	failures.push('start must be disabled for running-disabled');
@@ -157,6 +173,44 @@ page.setRuntimeFilter('unknown-filter');
 if (page.runtimeFilter !== 'total' || page.runtimeTableBody.children.length !== 5)
 	failures.push('unknown runtime filter must fall back to total');
 
+page.updateRuntime({
+	state: 'running',
+	service: { global_enabled: true, init_enabled: true, procd_running: true },
+	mappings: [
+		{ instance: 'tcp', protocol: 'tcp', status: 'ok' },
+		{ instance: 'udp', protocol: 'udp', status: 'ok' }
+	],
+	mappingError: ''
+});
+if (!page.heroHealthNode.className.includes('is-success'))
+	failures.push('all-mapped running hero health must be successful');
+if (page.heroTitleNode.textContent !== '服務與映射正常' ||
+    !page.heroDetailNode.textContent.includes('2 個協定映射'))
+	failures.push('healthy hero summary is inaccurate');
+
+const probePanel = page.renderProbe();
+page.updateProbeTable([
+	{ interface: 'wan-a', status: 'ok', nat: true },
+	{ interface: 'wan-b', status: 'ok', nat: false }
+]);
+if (!probePanel.className.includes('natter-probe-panel'))
+	failures.push('WAN probe panel visual role class is missing');
+if (!page.probeSummaryNode.className.includes('is-success') ||
+    page.probeSummaryNode.textContent !== '2/2 個 WAN 正常 · 經 NAT 1 · 直連 1')
+	failures.push('WAN probe summary is inaccurate');
+
+const checkPanel = page.renderConfigCheck();
+page.updateConfigCheckTable([
+	{ section: 'one', status: 'ok' },
+	{ section: 'two', status: 'ok' },
+	{ section: 'three', status: 'conflict' }
+]);
+if (!checkPanel.className.includes('natter-check-panel'))
+	failures.push('config-check panel visual role class is missing');
+if (!page.configCheckSummaryNode.className.includes('is-warning') ||
+    page.configCheckSummaryNode.textContent !== '2/3 個項目可用')
+	failures.push('config-check summary is inaccurate');
+
 if (failures.length) {
 	failures.forEach(failure => console.error('not ok - ' + failure));
 	process.exit(1);
@@ -164,3 +218,4 @@ if (failures.length) {
 
 console.log('ok - running-disabled controls preserve stop access');
 console.log('ok - runtime summary filters return 5/1/1/3 rows with accurate aria state');
+console.log('ok - hero, diagnostics summaries and mobile CSS contracts are accurate');

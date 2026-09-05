@@ -15,17 +15,22 @@
 </head>
 <body>
 <main class="natter-page">
-	<section class="cbi-section" id="runtime-panel">
-		<div class="natter-panel-head"><h3 class="natter-section-title">執行狀態</h3><span class="natter-refresh-time">最後更新：21:08:35</span></div>
+	<section class="natter-hero" aria-labelledby="natter-page-title">
+		<div class="natter-hero-main"><div class="natter-hero-copy"><span class="natter-eyebrow">OPENWRT 多 WAN NAT 穿透</span><h2 class="natter-hero-title" id="natter-page-title">Natter</h2><p class="natter-hero-description">集中查看服務、映射與各 WAN 公網位址，並以獨立出口維持 TCP／UDP NAT 映射。</p></div><div class="natter-hero-health is-warning"><span class="natter-health-dot"></span><span class="natter-health-copy"><strong class="natter-health-title">部分映射需要注意</strong><span class="natter-health-detail">13/16 個映射已建立 · 等待 2 · 錯誤 1</span></span></div></div>
+		<div class="natter-feature-row"><span class="natter-feature-chip">多 WAN 個別出口</span><span class="natter-feature-chip">中國大陸 STUN 探測</span><span class="natter-feature-chip">TCP／UDP 獨立映射</span></div>
+		<p class="natter-port-note">外部埠由上游 NAT 自動分配，無法在此指定；TCP 與 UDP 的外部埠可能不同。</p>
+	</section>
+	<section class="cbi-section natter-panel natter-runtime-panel" id="runtime-panel">
+		<div class="natter-panel-head"><div class="natter-heading-copy"><span class="natter-section-kicker">即時狀態</span><h3 class="natter-section-title">執行狀態</h3></div><div class="natter-panel-meta"><span class="natter-refresh-time">最後更新：21:08:35</span></div></div>
 		<div class="cbi-value"><label class="cbi-value-title">服務</label><div class="cbi-value-field natter-status-live"><span class="label success">執行中</span><span class="natter-status-reason">procd 至少有一個執行中的 Natter 實例。</span></div></div>
 		<div class="natter-service-meta"><span class="label success">全域開關：已啟用</span><span class="label success">開機自啟：已啟用</span></div>
 		<div class="natter-summary-grid"><div class="natter-summary-card natter-summary-total"><span class="natter-summary-label">映射數</span><strong class="natter-summary-value">16</strong></div><div class="natter-summary-card natter-summary-mapped"><span class="natter-summary-label">已建立映射</span><strong class="natter-summary-value">13</strong></div><div class="natter-summary-card natter-summary-waiting"><span class="natter-summary-label">等待中</span><strong class="natter-summary-value">2</strong></div><div class="natter-summary-card natter-summary-errors"><span class="natter-summary-label">錯誤</span><strong class="natter-summary-value">1</strong></div></div>
 		<p class="natter-section-help">每個協定實例都會列為一列。長時間執行與錯誤內容會直接顯示在這裡。</p>
 		<div class="natter-table-wrap"><table class="table natter-responsive-table natter-runtime-table"><thead><tr><th>實例</th><th>WAN</th><th>協定</th><th>內部端點</th><th>公網端點</th><th>轉送目標</th><th>狀態</th><th>映射時間</th></tr></thead><tbody id="runtime-body"></tbody></table></div>
-		<div class="cbi-page-actions natter-action-bar" id="runtime-actions"><button class="btn cbi-button-positive">啟動</button><button class="btn cbi-button-apply">重新啟動</button><button class="btn cbi-button-negative">停止</button><button class="btn">重新整理</button></div>
+		<div class="cbi-page-actions natter-action-bar natter-runtime-actions" id="runtime-actions"><button class="btn cbi-button-positive">啟動</button><button class="btn cbi-button-apply">重新啟動</button><button class="btn cbi-button-negative">停止</button><button class="btn">重新整理</button></div>
 	</section>
-	<section class="cbi-section"><div class="natter-panel-head"><h3>WAN 公網位址</h3><span class="natter-refresh-time">檢查時間：21:08:36</span></div><p class="natter-section-help">探測使用中國大陸 UDP STUN。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">探測所有 WAN</button></div></section>
-	<section class="cbi-section"><div class="natter-panel-head"><h3>已設定的內部埠</h3><span class="natter-refresh-time">檢查時間：21:08:37</span></div><p class="natter-section-help">檢查已啟用的映射。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">檢查內部埠</button></div></section>
+	<section class="cbi-section natter-panel natter-probe-panel"><div class="natter-panel-head"><div class="natter-heading-copy"><span class="natter-section-kicker">出口檢查</span><h3 class="natter-section-title">WAN 公網位址</h3></div><div class="natter-panel-meta"><span class="natter-result-chip is-success">3/3 個 WAN 正常 · 經 NAT 2 · 直連 1</span><span class="natter-refresh-time">檢查時間：21:08:36</span></div></div><p class="natter-section-help">探測使用中國大陸 UDP STUN。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">探測所有 WAN</button></div></section>
+	<section class="cbi-section natter-panel natter-check-panel"><div class="natter-panel-head"><div class="natter-heading-copy"><span class="natter-section-kicker">設定診斷</span><h3 class="natter-section-title">已設定的內部埠</h3></div><div class="natter-panel-meta"><span class="natter-result-chip is-success">16/16 個項目可用</span><span class="natter-refresh-time">檢查時間：21:08:37</span></div></div><p class="natter-section-help">檢查已啟用的映射。</p><div class="natter-action-bar"><button class="btn cbi-button-apply">檢查內部埠</button></div></section>
 </main>
 <script>
 	function endpoint(text){return '<code class="natter-endpoint">'+text+'</code>'}

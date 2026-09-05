@@ -63,7 +63,7 @@ make package/natter/luci-app-natter/compile V=s
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。目前發布
-版本為 `openwrt-2.2.1-r24`，latest Release 只提供 OpenWrt 25.12+ APK。
+版本為 `openwrt-2.2.1-r25`，latest Release 只提供 OpenWrt 25.12+ APK。
 
 OpenWrt 25.12 以上：
 
@@ -81,16 +81,18 @@ apk add --force-overwrite --clean-protected --allow-untrusted --no-chown /tmp/na
 
 安裝 `luci-app-natter` 後，頁面位於 **Services → Natter**。首次安裝的全域開關
 預設關閉；建立並檢查 mapping 後再於頁面啟用，因此不會因安裝套件立即開放任何連入埠。
-頁面上方的 **WAN 公網位址** 面板會自動逐一檢查每個不重複的 WAN；已安裝
+頁面頂端會集中顯示服務與映射健康狀態，並明確提醒外部埠由上游 NAT 自動分配，
+TCP 與 UDP 可能取得不同的外部埠。**WAN 公網位址** 面板會自動逐一檢查每個不重複的 WAN；已安裝
 mwan3 時使用其介面清單，未安裝時改用已啟用 mapping 所選的 WAN，
-顯示 L3 裝置、WAN IPv4、公網 IPv4 與是否經過 NAT；也可按 **探測所有 WAN**
+顯示 L3 裝置、WAN IPv4、公網 IPv4、是否經過 NAT 及正常／NAT／直連摘要；也可按 **探測所有 WAN**
 重新檢查。探測使用各 WAN 獨立路由的中國大陸 UDP STUN，不會新增任何入站防火牆規則。
 **已設定的內部埠** 面板會用與 Natter 相同的裝置綁定、socket mark 與
 `SO_REUSEPORT` 選項檢查埠；若被 uhttpd 等本機服務占用，會顯示衝突，而且該協定
 不會產生 firewall4 規則。最上方的 **執行狀態** 會把每個協定實例完整列出，
 包含尚在探測的 Waiting、成功的 Mapped 與具體錯誤，不需要在固定高度的文字框中捲動。
 在 700px 以下的手機畫面，執行狀態、公網 IP、埠檢查與映射設定表都會自動改為
-逐筆卡片，避免欄位重疊或產生橫向捲動。
+逐筆卡片，長端點可換行；操作按鈕具備至少 44px 觸控高度，最窄畫面會改成單欄，
+避免欄位重疊、橫向捲動或操作列遮擋。
 
 ## 多 WAN 設定
 

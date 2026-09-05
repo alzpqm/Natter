@@ -19,16 +19,16 @@ route mark 避免 failover 或負載平衡切換出口。路由器本機 socket 
 mwan3 時則使用一般 OpenWrt WAN 路由。
 
 - LuCI 正體中文管理介面，支援 TCP、UDP 與 TCP + UDP 獨立映射
-- 顯示各 WAN 的公網 IPv4、NAT 狀態、埠衝突檢查與執行狀態
+- 動態總覽服務與映射健康狀態，並顯示各 WAN 的公網 IPv4、NAT 狀態及埠衝突檢查
 - 自動保留固定內部埠，避免代理程式的臨時 UDP socket 搶先佔用
-- 手機畫面會將表格改為卡片排列，避免欄位重疊
+- 手機畫面會將表格改為卡片排列，提供 44px 觸控按鈕並避免欄位重疊
 - OpenWrt package 原始碼與建置說明：[`openwrt/README.md`](openwrt/README.md)
 - 目前套件與 SHA256：[`OpenWrt latest Release`](https://github.com/alzpqm/Natter/releases/latest)
 
 Release 內含：
 
-- `natter-2.2.1-r24.apk`
-- `luci-app-natter-2.2.1-r24.apk`
+- `natter-2.2.1-r25.apk`
+- `luci-app-natter-2.2.1-r25.apk`
 
 以下指令會從 Fork 的最新 Release 取得 OpenWrt 25.12+ APK。請勿在 OpenWrt 24.10
 或更早版本安裝；latest Release 不再提供 IPK。
