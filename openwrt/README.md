@@ -5,8 +5,9 @@
 套件依賴。安裝 mwan3 時可為每條 WAN 啟動獨立的
 TCP／UDP Natter 實例，也可用一個設定同時啟動彼此獨立的 TCP + UDP 映射。
 
-> 自 `openwrt-2.2.1-r24` 起，只支援 OpenWrt 25.12 以上 APK。OpenWrt 24.10
-> 與更早版本及 IPK／opkg 已停止支援並封存，不再建置或測試。請參閱
+> 自 `openwrt-2.2.1-r24` 起，官方預設建置、測試與 Release 只提供 OpenWrt 25.12
+> 以上 APK。低於 25.12 的版本不納入官方支援矩陣、CI 或實機驗證；使用者仍可使用
+> 相應舊版 SDK 自行編譯，但結果由使用者自行確認。請參閱
 > [`LEGACY_SUPPORT.md`](LEGACY_SUPPORT.md)。
 
 ## 設計重點
@@ -57,13 +58,27 @@ make package/natter/compile V=s
 make package/natter/luci-app-natter/compile V=s
 ```
 
-現行建置只以 OpenWrt 25.12+ SDK 產生 `.apk`。package 依賴 `python3-light` 與
-`firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。不要使用舊 SDK 產生 IPK。
+現行官方建置只以 OpenWrt 25.12+ SDK 產生 `.apk`。package 依賴 `python3-light` 與
+`firewall4`；`mwan3` 僅在需要多 WAN 隔離時才安裝。低於 25.12 的使用者可以用相應
+舊 SDK 自行嘗試產生 IPK，但不屬於官方建置或測試範圍。
+
+低於 25.12 的自行編譯範例：
+
+```sh
+cd /path/to/openwrt-<matching-old-release>
+# 將本目錄的 package 原始碼放入 source tree
+make package/natter/compile V=s
+make package/natter/luci-app-natter/compile V=s
+find bin/packages -type f \( -name 'natter_*.ipk' -o -name 'luci-app-natter_*.ipk' \)
+```
+
+舊版 SDK 可能需要自行調整 package metadata；產生的 IPK 不保證能與最新版本混用。
 
 ### 從 GitHub Release 安裝
 
 以下指令會讀取 Fork 的 latest Release；請先確認裝置能連線 GitHub API。目前發布
-版本為 `openwrt-2.2.1-r25`，latest Release 只提供 OpenWrt 25.12+ APK。
+目前 latest Release 只提供 OpenWrt 25.12+ APK；歷史 Release 中的 IPK 原樣保留，
+不再重建或編輯。
 
 OpenWrt 25.12 以上：
 

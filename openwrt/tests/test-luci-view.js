@@ -112,6 +112,13 @@ const mappings = [
 const failures = [];
 
 [
+	'--natter-accent:var(--primary-color-high',
+	'--natter-good:var(--success-color-high',
+	'--natter-warn:var(--warn-color-high',
+	'--natter-danger:var(--error-color-high',
+	':root[data-darkmode="true"] .natter-page',
+	'background:var(--background-color-medium',
+	'color:var(--on-error-color',
 	'.natter-runtime-actions{position:sticky',
 	'.natter-runtime-actions .btn{flex-basis:calc(50% - .5em)}',
 	'padding-bottom:max(.6em,env(safe-area-inset-bottom))',
@@ -125,6 +132,9 @@ const failures = [];
 	if (!source.includes(rule))
 		failures.push('responsive CSS contract is missing: ' + rule);
 });
+if (source.includes('.natter-label-danger{background:#c93232') ||
+	 source.includes('.natter-result-chip.is-success{border-color:rgba('))
+	failures.push('status colors must use LuCI theme variables');
 if (source.includes('.natter-action-bar{position:sticky'))
 	failures.push('sticky positioning must not apply to every action bar');
 if (!source.includes('外部埠由上游 NAT 自動分配，無法在此指定'))
