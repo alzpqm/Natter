@@ -1,0 +1,354 @@
+--- a/natter.py
++++ b/natter.py
+@@ -75,6 +75,7 @@
+             Logger._stream(Logger.DEBUG).write((Logger.GREY + "%s [%s] %s\n" + Logger.RESET) % (
+                 Logger.get_timestr(), Logger.rep[Logger.DEBUG], text
+             ))
++            Logger._stream(Logger.DEBUG).flush()
+ 
+     @staticmethod
+     def info(text=""):
+@@ -82,6 +83,7 @@
+             Logger._stream(Logger.INFO).write(("%s [%s] %s\n") % (
+                 Logger.get_timestr(), Logger.rep[Logger.INFO], text
+             ))
++            Logger._stream(Logger.INFO).flush()
+ 
+     @staticmethod
+     def warning(text=""):
+@@ -90,6 +92,7 @@
+                               Logger.RESET) % (
+                 Logger.get_timestr(), Logger.rep[Logger.WARN], text
+             ))
++            Logger._stream(Logger.WARN).flush()
+ 
+     @staticmethod
+     def error(text=""):
+@@ -98,6 +101,7 @@
+                               Logger.RESET) % (
+                 Logger.get_timestr(), Logger.rep[Logger.ERROR], text
+             ))
++            Logger._stream(Logger.ERROR).flush()
+ 
+ 
+ class NatterExit(object):
+@@ -243,16 +247,19 @@
+         self.source_port = source_port
+         self.interface = interface
+         self.udp = udp
++        self.reported_servers = set()
++        self.last_outage_log = None
+ 
+-    def get_mapping(self):
++    def get_mapping(self, retry=True):
+         first = self.stun_server_list[0]
+-        reported_servers = set()
+-        last_outage_log = None
+         while True:
+             if self.source_port:
+                 set_reuse_port(self.source_port)
+             try:
+-                return self._get_mapping()
++                mapping = self._get_mapping()
++                self.reported_servers.clear()
++                self.last_outage_log = None
++                return mapping
+             except StunClient.LocalAddressUnavailable:
+                 Logger.error(
+                     "stun: Local bind address is no longer available"
+@@ -265,17 +272,22 @@
+                 message = "stun: STUN server %s is unavailable: %s" % (
+                     server_uri, ex
+                 )
+-                if server_uri not in reported_servers:
++                if server_uri not in self.reported_servers:
+                     Logger.warning(message)
+-                    reported_servers.add(server_uri)
++                    self.reported_servers.add(server_uri)
+                 else:
+                     Logger.debug(message)
+                 self.stun_server_list.append(self.stun_server_list.pop(0))
+-                if self.stun_server_list[0] == first:
++                if len(self.reported_servers) >= len(self.stun_server_list):
+                     now = time.time()
+-                    if last_outage_log is None or now - last_outage_log >= 300:
++                    if self.last_outage_log is None or now - self.last_outage_log >= 300:
+                         Logger.error("stun: No STUN server is available right now")
+-                        last_outage_log = now
++                        self.last_outage_log = now
++                if not retry:
++                    # Once mapped, the caller must keep sending keep-alives
++                    # even when all STUN servers are temporarily unavailable.
++                    raise
++                if self.stun_server_list[0] == first:
+                     # force sleep for 10 seconds, then try the next loop
+                     time.sleep(10)
+ 
+@@ -300,25 +312,21 @@
+             sock.connect((stun_host, stun_port))
+             inner_addr = sock.getsockname()
+             self.source_host, self.source_port = inner_addr
+-            sock.send(struct.pack(
+-                "!LLLLL", 0x00010000, 0x2112a442, 0x4e415452,
+-                random.getrandbits(32), random.getrandbits(32)
+-            ))
+-            buff = sock.recv(1500)
+-            ip = port = 0
+-            payload = buff[20:]
+-            while payload:
+-                attr_type, attr_len = struct.unpack("!HH", payload[:4])
+-                if attr_type in [1, 32]:
+-                    _, _, port, ip = struct.unpack("!BBHL", payload[4:4+attr_len])
+-                    if attr_type == 32:
+-                        port ^= 0x2112
+-                        ip ^= 0x2112a442
+-                    break
+-                payload = payload[4 + attr_len:]
++            transaction_id = os.urandom(12)
++            request = struct.pack("!HHI", 0x0001, 0, 0x2112a442) + transaction_id
++            if self.udp:
++                sock.send(request)
++                buff = sock.recv(65535)
+             else:
+-                raise ValueError("Invalid STUN response")
+-            outer_addr = socket.inet_ntop(socket.AF_INET, struct.pack("!L", ip)), port
++                sock.sendall(request)
++                # TCP is a byte stream: neither the header nor the body is
++                # guaranteed to arrive in one recv(). Bound the whole read,
++                # not each fragment, so a trickling peer cannot stall us.
++                deadline = time.monotonic() + 3
++                buff = self._read_exact(sock, 20, deadline)
++                length = self._response_length(buff, transaction_id)
++                buff += self._read_exact(sock, length, deadline)
++            outer_addr = self._mapped_address(buff, transaction_id)
+             Logger.debug("stun: Got address %s from %s, source %s" % (
+                 addr_to_uri(outer_addr, udp=self.udp),
+                 addr_to_uri((stun_host, stun_port), udp=self.udp),
+@@ -332,8 +340,67 @@
+         finally:
+             sock.close()
+ 
++    @staticmethod
++    def _read_exact(sock, size, deadline):
++        chunks = []
++        while size:
++            remaining = deadline - time.monotonic()
++            if remaining <= 0:
++                raise socket.timeout("STUN response deadline exceeded")
++            sock.settimeout(remaining)
++            chunk = sock.recv(size)
++            if not chunk:
++                raise ValueError("Truncated STUN response")
++            chunks.append(chunk)
++            size -= len(chunk)
++        return b"".join(chunks)
+ 
++    @staticmethod
++    def _response_length(header, transaction_id):
++        if len(header) < 20:
++            raise ValueError("Truncated STUN header")
++        msg_type, length, cookie = struct.unpack("!HHI", header[:8])
++        if (msg_type != 0x0101 or cookie != 0x2112a442 or
++                header[8:20] != transaction_id or length % 4):
++            raise ValueError("Invalid STUN response header or transaction")
++        return length
++
++    @staticmethod
++    def _mapped_address(buff, transaction_id):
++        length = StunClient._response_length(buff, transaction_id)
++        if len(buff) != 20 + length:
++            raise ValueError("Invalid STUN response length")
++        mappings = {}
++        offset = 20
++        while offset < len(buff):
++            attr_type, attr_len = struct.unpack("!HH", buff[offset:offset + 4])
++            value_start = offset + 4
++            next_offset = value_start + ((attr_len + 3) & ~3)
++            if next_offset > len(buff):
++                raise ValueError("Truncated STUN attribute")
++            if attr_type in (1, 32):
++                if attr_len != 8 or buff[value_start + 1] != 1:
++                    raise ValueError("Invalid STUN IPv4 mapped address")
++                _, _, port, ip = struct.unpack("!BBHI", buff[value_start:value_start + 8])
++                if attr_type == 32:
++                    port ^= 0x2112
++                    ip ^= 0x2112a442
++                if not port:
++                    raise ValueError("Invalid STUN mapped port")
++                if attr_type not in mappings:
++                    mappings[attr_type] = (socket.inet_ntop(socket.AF_INET,
++                                          struct.pack("!I", ip)), port)
++            offset = next_offset
++        # Prefer XOR over legacy MAPPED-ADDRESS even if it occurs later.
++        if not mappings:
++            raise ValueError("STUN response has no IPv4 mapped address")
++        return mappings.get(32, mappings.get(1))
++
++
+ class KeepAlive(object):
++    class LocalAddressUnavailable(Exception):
++        pass
++
+     def __init__(self, host, port, source_host, source_port, interface=None, udp=False):
+         self.sock = None
+         self.host = host
+@@ -352,13 +419,18 @@
+         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
+         self.sock = socket.socket(socket.AF_INET, sock_type)
+         try:
+-            socket_set_opt(
+-                self.sock,
+-                reuse       = True,
+-                bind_addr   = (self.source_host, self.source_port),
+-                interface   = self.interface,
+-                timeout     = 3
+-            )
++            try:
++                socket_set_opt(
++                    self.sock,
++                    reuse       = True,
++                    bind_addr   = (self.source_host, self.source_port),
++                    interface   = self.interface,
++                    timeout     = 3
++                )
++            except (OSError, socket.error) as ex:
++                if getattr(ex, "errno", None) == errno.EADDRNOTAVAIL:
++                    raise KeepAlive.LocalAddressUnavailable(ex)
++                raise
+             self.sock.connect((self.host, self.port))
+             if not self.udp:
+                 Logger.debug("keep-alive: Connected to host %s" % (
+@@ -381,6 +453,25 @@
+             self._keep_alive_tcp()
+         Logger.debug("keep-alive: OK")
+ 
++    def wait_ready(self, interval):
++        # Startup must survive an unavailable peer or a TCP TIME_WAIT tuple
++        # collision without exhausting procd's finite respawn allowance.
++        last_warning = None
++        while True:
++            try:
++                self.keep_alive()
++                return
++            except (OSError, socket.error) as ex:
++                self.disconnect()
++                now = time.monotonic()
++                message = "keep-alive: Startup connection unavailable; retry in %ds: %s" % (interval, ex)
++                if last_warning is None or now - last_warning >= 300:
++                    Logger.warning(message)
++                    last_warning = now
++                else:
++                    Logger.debug(message)
++                time.sleep(interval)
++
+     def disconnect(self):
+         if self.sock is not None:
+             self.sock.close()
+@@ -397,16 +488,7 @@
+             "Connection: keep-alive\r\n"
+             "\r\n" % self.host
+         ).encode())
+-        buff = b""
+-        try:
+-            while True:
+-                buff = self.sock.recv(4096)
+-                if not buff:
+-                    raise OSError("Keep-alive server closed connection")
+-        except socket.timeout as ex:
+-            if not buff:
+-                raise ex
+-            return
++        self._receive_response(4096)
+ 
+     def _keep_alive_udp(self):
+         # send a DNS request
+@@ -415,19 +497,33 @@
+                 "!HHHHHH", random.getrandbits(16), 0x0100, 0x0001, 0x0000, 0x0000, 0x0000
+             ) + b"\x09keepalive\x06natter\x00" + struct.pack("!HH", 0x0001, 0x0001)
+         )
+-        buff = b""
++        self._receive_response(1500)
++        # fix: Keep-alive cause STUN socket timeout on Windows
++        if sys.platform == "win32":
++            self.disconnect()
++
++    def _receive_response(self, size):
++        deadline = time.monotonic() + 3
++        received = False
+         try:
+             while True:
+-                buff = self.sock.recv(1500)
++                remaining = deadline - time.monotonic()
++                if remaining <= 0:
++                    if not received:
++                        raise socket.timeout("Keep-alive response deadline exceeded")
++                    return
++                self.sock.settimeout(remaining)
++                try:
++                    buff = self.sock.recv(size)
++                except socket.timeout:
++                    if not received:
++                        raise
++                    return
+                 if not buff:
+                     raise OSError("Keep-alive server closed connection")
+-        except socket.timeout as ex:
+-            if not buff:
+-                raise ex
+-            # fix: Keep-alive cause STUN socket timeout on Windows
+-            if sys.platform == "win32":
+-                self.disconnect()
+-            return
++                received = True
++        finally:
++            self.sock.settimeout(3)
+ 
+ 
+ class ForwardNone(object):
+@@ -1838,7 +1934,10 @@
+     bind_ip, bind_port = natter_addr
+ 
+     keep_alive = KeepAlive(keepalive_host, keepalive_port, bind_ip, bind_port, udp=udp_mode, interface=bind_interface)
+-    keep_alive.keep_alive()
++    try:
++        keep_alive.wait_ready(interval)
++    except KeepAlive.LocalAddressUnavailable:
++        raise NatterExitException("Local bind address is no longer available")
+ 
+     # get the mapped address again after the keep-alive connection is established
+     outer_addr_prev = outer_addr
+@@ -1954,7 +2053,13 @@
+             # check LAN port first
+             if udp_mode or port_test.test_lan(outer_addr, source_ip=natter_addr[0], interface=bind_interface) == -1:
+                 # then check through STUN
+-                _, outer_addr_curr = stun.get_mapping()
++                try:
++                    _, outer_addr_curr = stun.get_mapping(retry=False)
++                except StunClient.ServerUnavailable:
++                    # Retry a single server next loop, without starving the
++                    # established mapping's keep-alive during a STUN outage.
++                    need_recheck = True
++                    outer_addr_curr = outer_addr
+                 if outer_addr_curr != outer_addr:
+                     forwarder.stop_forward()
+                     keep_alive.disconnect()
+@@ -1967,14 +2072,12 @@
+         ts = time.time()
+         try:
+             keep_alive.keep_alive()
++        except KeepAlive.LocalAddressUnavailable:
++            if exit_when_changed:
++                Logger.info("Natter is exiting because local IP address has changed")
++                raise NatterExitException("Local IP address has changed")
++            raise NatterRetryException("Local IP address has changed")
+         except (OSError, socket.error) as ex:
+-            if hasattr(errno, "EADDRNOTAVAIL") and \
+-                    ex.errno == errno.EADDRNOTAVAIL:
+-                if exit_when_changed:
+-                    Logger.info("Natter is exiting because local IP address "
+-                                "has changed")
+-                    raise NatterExitException("Local IP address has changed")
+-                raise NatterRetryException("Local IP address has changed")
+             if udp_mode:
+                 Logger.debug("keep-alive: UDP response not received: %s" % ex)
+             else:

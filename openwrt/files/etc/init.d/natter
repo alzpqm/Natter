@@ -338,6 +338,9 @@ start_protocol_instance() {
 	# mappings after a real respawn; stop_service clears state on intentional stop.
 	procd_open_instance "$process_name"
 	procd_set_param command "$PYTHON" "$PROG"
+	# Python stays in memory after its file is replaced. Let procd compare the
+	# core checksum so an upgrade also replaces workers whose argv is unchanged.
+	procd_set_param file "$PROG"
 
 	procd_append_param command --no-port-test
 	procd_append_param command -m none
